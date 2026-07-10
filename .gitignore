@@ -1,0 +1,8 @@
+.uv-cache/
+.uv-python/
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+dist/
+build/
