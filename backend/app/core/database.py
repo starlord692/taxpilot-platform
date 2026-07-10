@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import (
     async_sessionmaker,
     create_async_engine,
 )
-from sqlalchemy.orm import DeclarativeBase, MappedAsDataclass
+from sqlalchemy.orm import DeclarativeBase
 
 from app.core.config import Settings, get_settings
 
@@ -23,7 +23,7 @@ class DatabaseState:
 database_state = DatabaseState()
 
 
-class Base(MappedAsDataclass, DeclarativeBase):
+class Base(DeclarativeBase):
     """Base class for future SQLAlchemy ORM models."""
 
 
