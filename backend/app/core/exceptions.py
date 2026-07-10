@@ -5,14 +5,34 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from app.common.exceptions import TaxPilotException
 from app.core.logging import get_logger
-from app.core.responses import ApiResponse
+from app.core.responses import ApiResponse, ErrorDetail, ErrorResponse
 
 logger = get_logger(__name__)
 
 
 def register_exception_handlers(app: FastAPI) -> None:
     """Register application-wide exception handlers."""
+
+    @app.exception_handler(TaxPilotException)
+    async def taxpilot_exception_handler(
+        request: Request,
+        exc: TaxPilotException,
+    ) -> JSONResponse:
+        logger.warning(
+            "application_exception",
+            extra={"path": request.url.path, "error_code": exc.error_code},
+        )
+        response = ErrorResponse(
+            success=False,
+            message=exc.message,
+            data=ErrorDetail(code=exc.error_code, details=exc.details),
+        )
+        return JSONResponse(
+            status_code=exc.status_code,
+            content=response.model_dump(),
+        )
 
     @app.exception_handler(StarletteHTTPException)
     async def http_exception_handler(
