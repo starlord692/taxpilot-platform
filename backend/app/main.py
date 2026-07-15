@@ -11,6 +11,8 @@ from app.core.exceptions import register_exception_handlers
 from app.core.logging import configure_logging, get_logger
 from app.core.responses import ApiResponse
 from app.infrastructure.redis import close_redis, initialize_redis
+from app.modules.identity.api.login_router import router as identity_login_router
+from app.modules.identity.api.router import router as identity_router
 
 logger = get_logger(__name__)
 
@@ -60,6 +62,8 @@ def create_app(
     )
 
     register_exception_handlers(app)
+    app.include_router(identity_router, prefix=active_settings.api_v1_prefix)
+    app.include_router(identity_login_router, prefix=active_settings.api_v1_prefix)
 
     @app.get(
         f"{active_settings.api_v1_prefix}/health",

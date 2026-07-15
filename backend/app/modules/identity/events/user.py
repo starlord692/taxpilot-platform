@@ -16,3 +16,13 @@ class IdentityUserCreatedEvent(Event):
     email: str
     event_name: str = "identity.user_created"
     occurred_at: datetime = field(default_factory=utc_now)
+
+
+@dataclass(frozen=True)
+class IdentityUserAuthenticatedEvent(Event):
+    """Event published after an identity user authenticates."""
+
+    user_id: uuid.UUID
+    email: str
+    event_name: str = "identity.user_authenticated"
+    occurred_at: datetime = field(default_factory=utc_now)

@@ -1,5 +1,8 @@
 """Identity events."""
 
-from app.modules.identity.events.user import IdentityUserCreatedEvent
+from app.modules.identity.events.user import (
+    IdentityUserAuthenticatedEvent,
+    IdentityUserCreatedEvent,
+)
 
-__all__ = ["IdentityUserCreatedEvent"]
+__all__ = ["IdentityUserAuthenticatedEvent", "IdentityUserCreatedEvent"]

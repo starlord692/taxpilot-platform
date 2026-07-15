@@ -32,6 +32,10 @@ class Settings(BaseSettings):
 
     redis_url: str = "redis://localhost:6379/0"
 
+    identity_token_secret_key: str = ""
+    identity_access_token_expire_minutes: int = 15
+    identity_refresh_token_expire_days: int = 30
+
     log_level: str = "INFO"
 
 

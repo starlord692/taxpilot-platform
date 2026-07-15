@@ -19,6 +19,10 @@ class ApiResponse[DataT](BaseModel):
     data: DataT | None = None
 
 
+class SuccessResponse[DataT](ApiResponse[DataT]):
+    """Standard API success response envelope."""
+
+
 class ErrorDetail(BaseModel):
     """Structured API error detail."""
 

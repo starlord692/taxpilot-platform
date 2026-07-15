@@ -61,3 +61,22 @@ class IdentityPermissionRepository(BaseRepository[IdentityPermission]):
         )
         result = await self.session.execute(statement)
         return list(result.scalars().all())
+
+    async def list_permissions_for_roles(
+        self,
+        role_ids: list[uuid.UUID],
+    ) -> list[IdentityPermission]:
+        """Return permissions assigned to any of the provided roles."""
+        if not role_ids:
+            return []
+
+        statement = (
+            select(IdentityPermission)
+            .join(
+                IdentityRolePermission,
+                IdentityRolePermission.permission_id == IdentityPermission.id,
+            )
+            .where(IdentityRolePermission.role_id.in_(role_ids))
+        )
+        result = await self.session.execute(statement)
+        return list(result.scalars().unique().all())

@@ -49,6 +49,15 @@ class IdentityUserRepository(BaseRepository[IdentityUser]):
         await self.session.flush()
         return credential
 
+    async def get_credential(self, user_id: uuid.UUID) -> IdentityCredential | None:
+        """Return credentials for a user."""
+        statement = select(IdentityCredential).where(
+            IdentityCredential.user_id == user_id,
+            IdentityCredential.is_deleted.is_(False),
+        )
+        result = await self.session.execute(statement)
+        return result.scalar_one_or_none()
+
     async def get_by_id(self, user_id: uuid.UUID) -> IdentityUser | None:
         """Return a non-deleted user by UUID."""
         statement = select(IdentityUser).where(
