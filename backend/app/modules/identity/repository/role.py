@@ -65,6 +65,10 @@ class IdentityRoleRepository(BaseRepository[IdentityRole]):
 
     async def role_exists(self, name: str) -> bool:
         """Return whether a role exists by name."""
+        return await self.get_by_name(name) is not None
+
+    async def get_by_name(self, name: str) -> IdentityRole | None:
+        """Return a role by name."""
         statement = select(IdentityRole).where(IdentityRole.name == name)
         result = await self.session.execute(statement)
-        return result.scalar_one_or_none() is not None
+        return result.scalar_one_or_none()

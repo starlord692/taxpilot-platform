@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.common.pagination import Page, PaginationParams
 from app.common.repositories import BaseRepository
-from app.modules.identity.models import IdentityUser, UserStatus
+from app.modules.identity.models import IdentityCredential, IdentityUser, UserStatus
 from app.modules.identity.schemas import CreateUserRequest, UpdateUserRequest
 
 
@@ -33,6 +33,21 @@ class IdentityUserRepository(BaseRepository[IdentityUser]):
             failed_login_attempts=0,
         )
         return await self.add(user)
+
+    async def create_credential(
+        self,
+        *,
+        user_id: uuid.UUID,
+        password_hash: str,
+    ) -> IdentityCredential:
+        """Create password credentials for a user."""
+        credential = IdentityCredential(
+            user_id=user_id,
+            password_hash=password_hash,
+        )
+        self.session.add(credential)
+        await self.session.flush()
+        return credential
 
     async def get_by_id(self, user_id: uuid.UUID) -> IdentityUser | None:
         """Return a non-deleted user by UUID."""
