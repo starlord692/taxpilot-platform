@@ -1,0 +1,1 @@
+"""Journal schemas package placeholder."""
