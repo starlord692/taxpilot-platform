@@ -1,0 +1,266 @@
+[
+  {
+    "code": "1000",
+    "name": "Cash",
+    "category": "Asset",
+    "type": "Current Asset",
+    "normal_balance": "DEBIT",
+    "is_system": true
+  },
+  {
+    "code": "1010",
+    "name": "Bank",
+    "category": "Asset",
+    "type": "Current Asset",
+    "normal_balance": "DEBIT",
+    "is_system": true
+  },
+  {
+    "code": "1020",
+    "name": "Accounts Receivable",
+    "category": "Asset",
+    "type": "Current Asset",
+    "normal_balance": "DEBIT",
+    "is_system": true
+  },
+  {
+    "code": "1030",
+    "name": "Inventory",
+    "category": "Asset",
+    "type": "Current Asset",
+    "normal_balance": "DEBIT",
+    "is_system": true
+  },
+  {
+    "code": "1040",
+    "name": "Fixed Assets",
+    "category": "Asset",
+    "type": "Fixed Asset",
+    "normal_balance": "DEBIT",
+    "is_system": true
+  },
+  {
+    "code": "1050",
+    "name": "Input GST",
+    "category": "Asset",
+    "type": "Current Asset",
+    "normal_balance": "DEBIT",
+    "is_system": true
+  },
+  {
+    "code": "1060",
+    "name": "Prepaid Expenses",
+    "category": "Asset",
+    "type": "Current Asset",
+    "normal_balance": "DEBIT",
+    "is_system": true
+  },
+  {
+    "code": "1070",
+    "name": "Security Deposits",
+    "category": "Asset",
+    "type": "Current Asset",
+    "normal_balance": "DEBIT",
+    "is_system": true
+  },
+  {
+    "code": "2000",
+    "name": "Accounts Payable",
+    "category": "Liability",
+    "type": "Current Liability",
+    "normal_balance": "CREDIT",
+    "is_system": true
+  },
+  {
+    "code": "2010",
+    "name": "GST Payable",
+    "category": "Liability",
+    "type": "Current Liability",
+    "normal_balance": "CREDIT",
+    "is_system": true
+  },
+  {
+    "code": "2020",
+    "name": "Loans",
+    "category": "Liability",
+    "type": "Long Term Liability",
+    "normal_balance": "CREDIT",
+    "is_system": true
+  },
+  {
+    "code": "2030",
+    "name": "Outstanding Expenses",
+    "category": "Liability",
+    "type": "Current Liability",
+    "normal_balance": "CREDIT",
+    "is_system": true
+  },
+  {
+    "code": "2040",
+    "name": "Duties and Taxes Payable",
+    "category": "Liability",
+    "type": "Current Liability",
+    "normal_balance": "CREDIT",
+    "is_system": true
+  },
+  {
+    "code": "2050",
+    "name": "Salary Payable",
+    "category": "Liability",
+    "type": "Current Liability",
+    "normal_balance": "CREDIT",
+    "is_system": true
+  },
+  {
+    "code": "3000",
+    "name": "Owner Capital",
+    "category": "Equity",
+    "type": "Equity",
+    "normal_balance": "CREDIT",
+    "is_system": true
+  },
+  {
+    "code": "3010",
+    "name": "Retained Earnings",
+    "category": "Equity",
+    "type": "Equity",
+    "normal_balance": "CREDIT",
+    "is_system": true
+  },
+  {
+    "code": "3020",
+    "name": "Drawings",
+    "category": "Equity",
+    "type": "Equity",
+    "normal_balance": "DEBIT",
+    "is_system": true
+  },
+  {
+    "code": "4000",
+    "name": "Sales",
+    "category": "Revenue",
+    "type": "Operating Revenue",
+    "normal_balance": "CREDIT",
+    "is_system": true
+  },
+  {
+    "code": "4010",
+    "name": "Service Income",
+    "category": "Revenue",
+    "type": "Operating Revenue",
+    "normal_balance": "CREDIT",
+    "is_system": true
+  },
+  {
+    "code": "4020",
+    "name": "Other Income",
+    "category": "Revenue",
+    "type": "Other Revenue",
+    "normal_balance": "CREDIT",
+    "is_system": true
+  },
+  {
+    "code": "4030",
+    "name": "Interest Income",
+    "category": "Revenue",
+    "type": "Other Revenue",
+    "normal_balance": "CREDIT",
+    "is_system": true
+  },
+  {
+    "code": "5000",
+    "name": "Cost of Goods Sold",
+    "category": "Expense",
+    "type": "Cost of Sales",
+    "normal_balance": "DEBIT",
+    "is_system": true
+  },
+  {
+    "code": "5100",
+    "name": "Salary Expense",
+    "category": "Expense",
+    "type": "Operating Expense",
+    "normal_balance": "DEBIT",
+    "is_system": true
+  },
+  {
+    "code": "5200",
+    "name": "Rent Expense",
+    "category": "Expense",
+    "type": "Operating Expense",
+    "normal_balance": "DEBIT",
+    "is_system": true
+  },
+  {
+    "code": "5300",
+    "name": "Electricity",
+    "category": "Expense",
+    "type": "Operating Expense",
+    "normal_balance": "DEBIT",
+    "is_system": true
+  },
+  {
+    "code": "5400",
+    "name": "Fuel",
+    "category": "Expense",
+    "type": "Operating Expense",
+    "normal_balance": "DEBIT",
+    "is_system": true
+  },
+  {
+    "code": "5500",
+    "name": "Office Supplies",
+    "category": "Expense",
+    "type": "Operating Expense",
+    "normal_balance": "DEBIT",
+    "is_system": true
+  },
+  {
+    "code": "5600",
+    "name": "Internet",
+    "category": "Expense",
+    "type": "Operating Expense",
+    "normal_balance": "DEBIT",
+    "is_system": true
+  },
+  {
+    "code": "5700",
+    "name": "Marketing",
+    "category": "Expense",
+    "type": "Operating Expense",
+    "normal_balance": "DEBIT",
+    "is_system": true
+  },
+  {
+    "code": "5800",
+    "name": "Travel",
+    "category": "Expense",
+    "type": "Operating Expense",
+    "normal_balance": "DEBIT",
+    "is_system": true
+  },
+  {
+    "code": "5900",
+    "name": "Miscellaneous",
+    "category": "Expense",
+    "type": "Operating Expense",
+    "normal_balance": "DEBIT",
+    "is_system": true
+  },
+  {
+    "code": "5910",
+    "name": "Professional Fees",
+    "category": "Expense",
+    "type": "Operating Expense",
+    "normal_balance": "DEBIT",
+    "is_system": true
+  },
+  {
+    "code": "5920",
+    "name": "Bank Charges",
+    "category": "Expense",
+    "type": "Operating Expense",
+    "normal_balance": "DEBIT",
+    "is_system": true
+  }
+]

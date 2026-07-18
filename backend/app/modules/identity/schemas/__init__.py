@@ -10,6 +10,8 @@ from app.modules.identity.schemas.responses import (
     LoginResponse,
     PermissionResponse,
     RoleResponse,
+    SessionResponse,
+    SessionUserResponse,
     UserResponse,
 )
 
@@ -20,6 +22,8 @@ __all__ = [
     "LoginResponse",
     "PermissionResponse",
     "RoleResponse",
+    "SessionResponse",
+    "SessionUserResponse",
     "UpdateUserRequest",
     "UserResponse",
 ]

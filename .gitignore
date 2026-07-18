@@ -1,5 +1,6 @@
 .uv-cache/
 .uv-python/
+.tmp/
 *.zip
 *.tar
 *.tar.gz

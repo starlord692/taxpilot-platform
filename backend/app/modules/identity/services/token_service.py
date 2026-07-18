@@ -126,6 +126,11 @@ class TokenService:
         self._unit_of_work_factory = unit_of_work_factory
         self._ensure_secret_configured()
 
+    @property
+    def access_token_expires_in(self) -> int:
+        """Return access token lifetime in seconds."""
+        return self._settings.identity_access_token_expire_minutes * 60
+
     def generate_access_token(
         self,
         authentication_result: AuthenticationResult,

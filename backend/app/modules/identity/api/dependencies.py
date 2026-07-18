@@ -7,12 +7,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.common.events import EventDispatcher
 from app.common.unit_of_work import SQLAlchemyUnitOfWork
+from app.core.config import get_settings
 from app.core.database import database_state, initialize_database
-from app.modules.identity.services import AuthenticationService, RegistrationService
+from app.modules.identity.services import (
+    AuthenticationService,
+    RegistrationService,
+    TokenService,
+)
 from app.modules.identity.services.authentication_service import (
     AuthenticationUnitOfWork,
 )
 from app.modules.identity.services.registration_service import RegistrationUnitOfWork
+from app.modules.identity.services.token_service import TokenUnitOfWork
 
 
 def get_session_factory() -> Callable[[], AsyncSession]:
@@ -54,4 +60,17 @@ def get_authentication_service() -> AuthenticationService:
     return AuthenticationService(
         unit_of_work_factory=unit_of_work_factory,
         event_dispatcher=get_event_dispatcher(),
+    )
+
+
+def get_token_service() -> TokenService:
+    """Provide the token service with injected dependencies."""
+    session_factory = get_session_factory()
+    unit_of_work_factory = cast(
+        Callable[[], TokenUnitOfWork],
+        lambda: SQLAlchemyUnitOfWork(session_factory),
+    )
+    return TokenService(
+        settings=get_settings(),
+        unit_of_work_factory=unit_of_work_factory,
     )

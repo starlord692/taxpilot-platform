@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, status
 
 from app.core.responses import ErrorResponse, SuccessResponse
 from app.modules.identity.api.dependencies import get_registration_service
+from app.modules.identity.dependencies import CurrentUser
 from app.modules.identity.schemas import CreateUserRequest, UserResponse
 from app.modules.identity.services import RegistrationService
 
@@ -74,3 +75,47 @@ async def register_user(
         message="User registered successfully",
         data=user,
     )
+
+
+@router.get(
+    "/me",
+    response_model=UserResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Get current identity user",
+    description="Returns the identity profile for the authenticated bearer token.",
+    responses={
+        HTTPStatus.OK: {
+            "description": "Current user returned successfully.",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "id": "018f1d3c-4f87-7b6f-8f25-6cfcdd17f8b4",
+                        "email": "owner@example.com",
+                        "first_name": "Jane",
+                        "last_name": "Doe",
+                        "display_name": "Jane Doe",
+                        "status": "active",
+                        "last_login_at": None,
+                        "failed_login_attempts": 0,
+                        "locked_until": None,
+                    }
+                }
+            },
+        },
+        HTTPStatus.UNAUTHORIZED: {
+            "model": ErrorResponse,
+            "description": "Authentication is missing or invalid.",
+        },
+        HTTPStatus.FORBIDDEN: {
+            "model": ErrorResponse,
+            "description": "Authenticated user is not permitted.",
+        },
+        HTTPStatus.INTERNAL_SERVER_ERROR: {
+            "model": ErrorResponse,
+            "description": "Internal server error.",
+        },
+    },
+)
+async def get_me(current_user: CurrentUser) -> UserResponse:
+    """Return the current authenticated identity user."""
+    return UserResponse.model_validate(current_user)

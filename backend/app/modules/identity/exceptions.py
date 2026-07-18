@@ -18,6 +18,20 @@ class AuthenticationInvalidCredentialsException(TaxPilotException):
     error_code = "authentication.invalid_credentials"
 
 
+class AuthenticationRequiredException(TaxPilotException):
+    """Raised when a protected resource has no authenticated user."""
+
+    status_code = HTTPStatus.UNAUTHORIZED
+    error_code = "authentication.required"
+
+
+class AuthenticationUserUnavailableException(TaxPilotException):
+    """Raised when token subject cannot be used as an active user."""
+
+    status_code = HTTPStatus.UNAUTHORIZED
+    error_code = "authentication.user_unavailable"
+
+
 class AuthenticationEmailNotVerifiedException(TaxPilotException):
     """Raised when a pending account attempts authentication."""
 

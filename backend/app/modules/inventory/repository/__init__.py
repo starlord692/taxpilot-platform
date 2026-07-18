@@ -1,0 +1,1 @@
+"""Inventory repository package placeholder."""

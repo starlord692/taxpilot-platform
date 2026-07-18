@@ -11,8 +11,15 @@ from app.core.exceptions import register_exception_handlers
 from app.core.logging import configure_logging, get_logger
 from app.core.responses import ApiResponse
 from app.infrastructure.redis import close_redis, initialize_redis
+from app.modules.business.api import router as business_router
+from app.modules.expenses.api import router as expenses_router
 from app.modules.identity.api.login_router import router as identity_login_router
 from app.modules.identity.api.router import router as identity_router
+from app.modules.identity.api.session_router import router as identity_session_router
+from app.modules.identity.middleware import AuthenticationMiddleware
+from app.modules.purchases.api import router as purchases_router
+from app.modules.sales.api import router as sales_router
+from app.modules.sales.api.payment_router import router as sales_payment_router
 
 logger = get_logger(__name__)
 
@@ -62,8 +69,15 @@ def create_app(
     )
 
     register_exception_handlers(app)
+    app.add_middleware(AuthenticationMiddleware)
     app.include_router(identity_router, prefix=active_settings.api_v1_prefix)
     app.include_router(identity_login_router, prefix=active_settings.api_v1_prefix)
+    app.include_router(identity_session_router, prefix=active_settings.api_v1_prefix)
+    app.include_router(business_router, prefix=active_settings.api_v1_prefix)
+    app.include_router(expenses_router, prefix=active_settings.api_v1_prefix)
+    app.include_router(purchases_router, prefix=active_settings.api_v1_prefix)
+    app.include_router(sales_router, prefix=active_settings.api_v1_prefix)
+    app.include_router(sales_payment_router, prefix=active_settings.api_v1_prefix)
 
     @app.get(
         f"{active_settings.api_v1_prefix}/health",

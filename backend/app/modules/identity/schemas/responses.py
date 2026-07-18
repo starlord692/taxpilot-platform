@@ -109,3 +109,50 @@ class LoginResponse(IdentityResponse):
         examples=[3600],
         gt=0,
     )
+
+
+class SessionUserResponse(IdentityResponse):
+    """Authenticated user context returned with a login session."""
+
+    id: uuid.UUID = Field(
+        description="Authenticated user UUID.",
+        examples=["018f1d3c-4f87-7b6f-8f25-6cfcdd17f8b4"],
+    )
+    email: str = Field(
+        description="Authenticated user email address.",
+        examples=["owner@example.com"],
+    )
+    roles: list[str] = Field(
+        description="Role names assigned to the authenticated user.",
+        examples=[["member"]],
+    )
+    permissions: list[str] = Field(
+        description="Permission names available to the authenticated user.",
+        examples=[["identity.users.read"]],
+    )
+
+
+class SessionResponse(IdentityResponse):
+    """Response schema for issued login sessions."""
+
+    access_token: str = Field(
+        description="Signed JWT access token.",
+        examples=["eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."],
+    )
+    refresh_token: str = Field(
+        description="Opaque refresh token.",
+        examples=["secure-refresh-token"],
+    )
+    token_type: str = Field(
+        default="Bearer",
+        description="Token type for Authorization headers.",
+        examples=["Bearer"],
+    )
+    expires_in: int = Field(
+        description="Access token lifetime in seconds.",
+        examples=[900],
+        gt=0,
+    )
+    user: SessionUserResponse = Field(
+        description="Authenticated user context.",
+    )
