@@ -1,7 +1,7 @@
 """Reusable Accounting Kernel for module integrations."""
 
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import Protocol
@@ -678,16 +678,22 @@ class AccountingKernelService:
                 description=f"Sales revenue for {invoice.invoice_number}",
             ),
         ]
-        if invoice.tax_amount > ZERO_AMOUNT:
-            lines.append(
-                JournalEntryLine(
-                    account_id=accounts[TAX_PAYABLE_CODE].id,
-                    account=accounts[TAX_PAYABLE_CODE],
-                    debit=ZERO_AMOUNT,
-                    credit=invoice.tax_amount,
-                    description=f"Tax payable for {invoice.invoice_number}",
+        for component_name, amount in self._tax_components(
+            invoice.lines,
+            fallback_tax_amount=invoice.tax_amount,
+        ).items():
+            if amount > ZERO_AMOUNT:
+                lines.append(
+                    JournalEntryLine(
+                        account_id=accounts[TAX_PAYABLE_CODE].id,
+                        account=accounts[TAX_PAYABLE_CODE],
+                        debit=ZERO_AMOUNT,
+                        credit=amount,
+                        description=(
+                            f"Output {component_name} for {invoice.invoice_number}"
+                        ),
+                    )
                 )
-            )
         journal = JournalEntry(
             business_id=invoice.business_id,
             journal_number=f"SINV-{invoice.invoice_number}",
@@ -754,16 +760,22 @@ class AccountingKernelService:
                 description=f"Expense account for {expense.expense_number}",
             )
         ]
-        if expense.tax_amount > ZERO_AMOUNT:
-            lines.append(
-                JournalEntryLine(
-                    account_id=accounts[INPUT_TAX_CODE].id,
-                    account=accounts[INPUT_TAX_CODE],
-                    debit=expense.tax_amount,
-                    credit=ZERO_AMOUNT,
-                    description=f"Input tax for {expense.expense_number}",
+        for component_name, amount in self._tax_components(
+            expense.lines,
+            fallback_tax_amount=expense.tax_amount,
+        ).items():
+            if amount > ZERO_AMOUNT:
+                lines.append(
+                    JournalEntryLine(
+                        account_id=accounts[INPUT_TAX_CODE].id,
+                        account=accounts[INPUT_TAX_CODE],
+                        debit=amount,
+                        credit=ZERO_AMOUNT,
+                        description=(
+                            f"Input {component_name} for {expense.expense_number}"
+                        ),
+                    )
                 )
-            )
         lines.append(
             JournalEntryLine(
                 account_id=accounts[ACCOUNTS_PAYABLE_CODE].id,
@@ -834,16 +846,22 @@ class AccountingKernelService:
                 description=f"Purchase expense for {purchase.purchase_number}",
             )
         ]
-        if purchase.tax_amount > ZERO_AMOUNT:
-            lines.append(
-                JournalEntryLine(
-                    account_id=accounts[INPUT_TAX_CODE].id,
-                    account=accounts[INPUT_TAX_CODE],
-                    debit=purchase.tax_amount,
-                    credit=ZERO_AMOUNT,
-                    description=f"Input tax for {purchase.purchase_number}",
+        for component_name, amount in self._tax_components(
+            purchase.lines,
+            fallback_tax_amount=purchase.tax_amount,
+        ).items():
+            if amount > ZERO_AMOUNT:
+                lines.append(
+                    JournalEntryLine(
+                        account_id=accounts[INPUT_TAX_CODE].id,
+                        account=accounts[INPUT_TAX_CODE],
+                        debit=amount,
+                        credit=ZERO_AMOUNT,
+                        description=(
+                            f"Input {component_name} for {purchase.purchase_number}"
+                        ),
+                    )
                 )
-            )
         lines.append(
             JournalEntryLine(
                 account_id=accounts[ACCOUNTS_PAYABLE_CODE].id,
@@ -1040,3 +1058,25 @@ class AccountingKernelService:
             raise JournalAccountInactiveException(
                 "Journal entry references an inactive account"
             )
+
+    def _tax_components(
+        self,
+        lines: Iterable[object],
+        *,
+        fallback_tax_amount: Decimal,
+    ) -> dict[str, Decimal]:
+        """Return aggregate GST components from source lines."""
+        components = {
+            "CGST": ZERO_AMOUNT,
+            "SGST": ZERO_AMOUNT,
+            "IGST": ZERO_AMOUNT,
+            "CESS": ZERO_AMOUNT,
+        }
+        for line in lines:
+            components["CGST"] += getattr(line, "cgst_amount", ZERO_AMOUNT)
+            components["SGST"] += getattr(line, "sgst_amount", ZERO_AMOUNT)
+            components["IGST"] += getattr(line, "igst_amount", ZERO_AMOUNT)
+            components["CESS"] += getattr(line, "cess_amount", ZERO_AMOUNT)
+        if sum(components.values(), ZERO_AMOUNT) == ZERO_AMOUNT:
+            components["GST"] = fallback_tax_amount
+        return components

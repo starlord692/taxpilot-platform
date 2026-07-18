@@ -48,6 +48,26 @@ class SalesInvoiceLine(BaseEntity):
         default=Decimal("0.00"),
         nullable=False,
     )
+    cgst_amount: Mapped[Decimal] = mapped_column(
+        Numeric(18, 2),
+        default=Decimal("0.00"),
+        nullable=False,
+    )
+    sgst_amount: Mapped[Decimal] = mapped_column(
+        Numeric(18, 2),
+        default=Decimal("0.00"),
+        nullable=False,
+    )
+    igst_amount: Mapped[Decimal] = mapped_column(
+        Numeric(18, 2),
+        default=Decimal("0.00"),
+        nullable=False,
+    )
+    cess_amount: Mapped[Decimal] = mapped_column(
+        Numeric(18, 2),
+        default=Decimal("0.00"),
+        nullable=False,
+    )
     line_total: Mapped[Decimal] = mapped_column(
         Numeric(18, 2),
         nullable=False,

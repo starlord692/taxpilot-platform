@@ -8,6 +8,11 @@ from typing import Protocol
 
 from app.common.events import EventDispatcher
 from app.common.pagination import Page, PaginationParams
+from app.modules.gst.services import (
+    GSTCalculationLineInput,
+    GSTCalculationService,
+    GSTSupplyType,
+)
 from app.modules.purchases.events import (
     PurchaseApprovedEvent,
     PurchaseCancelledEvent,
@@ -39,7 +44,6 @@ from app.modules.purchases.schemas import (
 )
 
 MONEY_PLACES = Decimal("0.01")
-TAX_PERCENT_DIVISOR = Decimal("100.00")
 PURCHASE_NUMBER_ATTEMPTS = 10
 
 
@@ -171,6 +175,14 @@ class PurchaseAccountingKernel(Protocol):
         ...
 
 
+class PurchaseStockEngine(Protocol):
+    """Inventory integration behavior required by purchase workflows."""
+
+    async def receive_purchase(self, purchase_invoice: PurchaseInvoice) -> object:
+        """Receive purchase stock movements."""
+        ...
+
+
 class PurchaseService:
     """Coordinate purchase invoice lifecycle operations."""
 
@@ -180,11 +192,17 @@ class PurchaseService:
         unit_of_work_factory: UnitOfWorkFactory,
         event_dispatcher: EventDispatcher,
         accounting_kernel: PurchaseAccountingKernel | None = None,
+        stock_engine: PurchaseStockEngine | None = None,
+        gst_calculation_service: GSTCalculationService | None = None,
     ) -> None:
         """Initialize service dependencies."""
         self._unit_of_work_factory = unit_of_work_factory
         self._event_dispatcher = event_dispatcher
         self._accounting_kernel = accounting_kernel
+        self._stock_engine = stock_engine
+        self._gst_calculation_service = (
+            gst_calculation_service or GSTCalculationService(event_dispatcher)
+        )
 
     async def create_purchase(
         self,
@@ -284,15 +302,17 @@ class PurchaseService:
 
     async def approve_purchase(self, purchase_id: uuid.UUID) -> PurchaseInvoiceResponse:
         """Approve a draft purchase invoice."""
-        response = await self._transition_purchase(
+        purchase_invoice = await self._transition_purchase_model(
             purchase_id,
             target_status=PurchaseStatus.APPROVED,
             allowed_statuses={PurchaseStatus.DRAFT},
             event_name="approved",
         )
+        if self._stock_engine is not None:
+            await self._stock_engine.receive_purchase(purchase_invoice)
         if self._accounting_kernel is not None:
             await self._accounting_kernel.record_purchase_invoice(purchase_id)
-        return response
+        return PurchaseInvoiceResponse.model_validate(purchase_invoice)
 
     async def mark_received(self, purchase_id: uuid.UUID) -> PurchaseInvoiceResponse:
         """Mark an approved purchase invoice as received."""
@@ -392,6 +412,23 @@ class PurchaseService:
         event_name: str,
     ) -> PurchaseInvoiceResponse:
         """Apply a purchase lifecycle status transition."""
+        purchase_invoice = await self._transition_purchase_model(
+            purchase_id,
+            target_status=target_status,
+            allowed_statuses=allowed_statuses,
+            event_name=event_name,
+        )
+        return PurchaseInvoiceResponse.model_validate(purchase_invoice)
+
+    async def _transition_purchase_model(
+        self,
+        purchase_id: uuid.UUID,
+        *,
+        target_status: PurchaseStatus,
+        allowed_statuses: set[PurchaseStatus],
+        event_name: str,
+    ) -> PurchaseInvoice:
+        """Apply a purchase lifecycle status transition and return the model."""
         async with self._unit_of_work_factory() as uow:
             purchase_invoice = await self._get_existing_purchase(uow, purchase_id)
             if purchase_invoice.status not in allowed_statuses:
@@ -409,7 +446,7 @@ class PurchaseService:
             )
             await self._dispatch_status_event(purchase_invoice, event_name)
             await uow.commit()
-        return PurchaseInvoiceResponse.model_validate(purchase_invoice)
+        return purchase_invoice
 
     async def _get_existing_purchase(
         self,
@@ -565,6 +602,10 @@ class PurchaseService:
                     quantity=line.quantity,
                     unit_cost=line.unit_cost,
                     tax_rate=line.tax_rate or Decimal("0.00"),
+                    cgst_amount=line.cgst_amount or Decimal("0.00"),
+                    sgst_amount=line.sgst_amount or Decimal("0.00"),
+                    igst_amount=line.igst_amount or Decimal("0.00"),
+                    cess_amount=line.cess_amount or Decimal("0.00"),
                     line_total=line.line_total or Decimal("0.00"),
                 )
             )
@@ -585,11 +626,28 @@ class PurchaseService:
         tax_amount = Decimal("0.00")
         for line in lines:
             line_subtotal = self._money(line.quantity * line.unit_cost)
-            line_tax = self._money(line_subtotal * line.tax_rate / TAX_PERCENT_DIVISOR)
-            line_total = self._money(line_subtotal + line_tax)
-            prepared_lines.append(line.model_copy(update={"line_total": line_total}))
+            breakdown = self._gst_calculation_service.calculate_line(
+                GSTCalculationLineInput(
+                    description=line.description,
+                    quantity=Decimal("1.00"),
+                    unit_amount=line_subtotal,
+                    tax_rate=line.tax_rate,
+                    supply_type=GSTSupplyType.INTRA_STATE,
+                )
+            )
+            prepared_lines.append(
+                line.model_copy(
+                    update={
+                        "cgst_amount": breakdown.cgst_amount,
+                        "sgst_amount": breakdown.sgst_amount,
+                        "igst_amount": breakdown.igst_amount,
+                        "cess_amount": breakdown.cess_amount,
+                        "line_total": breakdown.line_total,
+                    }
+                )
+            )
             subtotal += line_subtotal
-            tax_amount += line_tax
+            tax_amount += breakdown.tax_amount
 
         subtotal = self._money(subtotal)
         tax_amount = self._money(tax_amount)

@@ -245,6 +245,19 @@ class FakeAccountingKernel:
         return object()
 
 
+class FakeSalesStockEngine:
+    """Fake stock engine for invoice integration tests."""
+
+    def __init__(self) -> None:
+        """Initialize captured calls."""
+        self.invoices: list[SalesInvoice] = []
+
+    async def issue_sale(self, sales_invoice: SalesInvoice) -> object:
+        """Capture sale stock issue call."""
+        self.invoices.append(sales_invoice)
+        return object()
+
+
 def build_customer(business_id: uuid.UUID | None = None) -> Customer:
     """Build a customer model."""
     return Customer(
@@ -452,6 +465,25 @@ async def test_issue_invoice_calls_accounting_kernel() -> None:
     await service.issue_invoice(invoice.id)
 
     assert kernel.invoice_ids == [invoice.id]
+
+
+async def test_issue_invoice_calls_stock_engine() -> None:
+    """Issuing an invoice delegates stock issuing to the inventory engine."""
+    invoice = build_invoice(status=InvoiceStatus.DRAFT)
+    stock_engine = FakeSalesStockEngine()
+    uow = FakeSalesInvoiceUnitOfWork(
+        customer_repository=FakeCustomerRepository(build_customer(invoice.business_id)),
+        invoice_repository=FakeInvoiceRepository(invoice=invoice),
+    )
+    service = SalesInvoiceService(
+        unit_of_work_factory=lambda: uow,
+        event_dispatcher=CapturingEventDispatcher(),
+        stock_engine=stock_engine,
+    )
+
+    await service.issue_invoice(invoice.id)
+
+    assert stock_engine.invoices == [invoice]
 
 
 async def test_cancel_invoice() -> None:

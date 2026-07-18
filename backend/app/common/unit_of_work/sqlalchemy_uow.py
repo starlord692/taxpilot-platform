@@ -21,16 +21,52 @@ from app.modules.business.repository import (
     BusinessMembershipRepository,
     BusinessRepository,
 )
+from app.modules.documents.automation.repository import AutomationRunRepository
+from app.modules.documents.extraction.repository import (
+    ExtractedDocumentRepository,
+    ExtractedFieldRepository,
+    ExtractionReviewRepository,
+)
+from app.modules.documents.repository import (
+    DocumentPageRepository,
+    DocumentRepository,
+    OCRResultRepository,
+)
+from app.modules.documents.review.repository import (
+    DocumentReviewRepository,
+    ReviewDecisionRepository,
+    ReviewRevisionRepository,
+    ValidationIssueRepository,
+)
 from app.modules.expenses.repository import (
     ExpenseLineRepository,
     ExpenseRepository,
     VendorRepository,
+)
+from app.modules.gst.compliance.repository import GSTComplianceRepository
+from app.modules.gst.einvoice.repository import (
+    EInvoiceRepository,
+    EWayBillRepository,
+    GSTProviderRepository,
+)
+from app.modules.gst.repository import (
+    GSTRegistrationRepository,
+    GSTSettingsRepository,
+    GSTTaxRateRepository,
+    HSNCodeRepository,
+    SACCodeRepository,
 )
 from app.modules.identity.repository import (
     IdentityPermissionRepository,
     IdentityRefreshTokenRepository,
     IdentityRoleRepository,
     IdentityUserRepository,
+)
+from app.modules.inventory.repository import (
+    ProductRepository,
+    StockBalanceRepository,
+    StockMovementRepository,
+    WarehouseRepository,
 )
 from app.modules.purchases.repository import (
     PurchaseInvoiceLineRepository,
@@ -60,6 +96,17 @@ class SQLAlchemyUnitOfWork(UnitOfWork):
         self.refresh_tokens: IdentityRefreshTokenRepository
         self.businesses: BusinessRepository
         self.business_memberships: BusinessMembershipRepository
+        self.documents: DocumentRepository
+        self.document_pages: DocumentPageRepository
+        self.ocr_results: OCRResultRepository
+        self.extracted_documents: ExtractedDocumentRepository
+        self.extracted_fields: ExtractedFieldRepository
+        self.extraction_reviews: ExtractionReviewRepository
+        self.automation_runs: AutomationRunRepository
+        self.validation_issues: ValidationIssueRepository
+        self.document_reviews: DocumentReviewRepository
+        self.review_revisions: ReviewRevisionRepository
+        self.review_decisions: ReviewDecisionRepository
         self.chart_of_accounts: ChartOfAccountsRepository
         self.journals: JournalRepository
         self.ledgers: LedgerRepository
@@ -75,6 +122,19 @@ class SQLAlchemyUnitOfWork(UnitOfWork):
         self.suppliers: SupplierRepository
         self.purchase_invoices: PurchaseInvoiceRepository
         self.purchase_invoice_lines: PurchaseInvoiceLineRepository
+        self.products: ProductRepository
+        self.warehouses: WarehouseRepository
+        self.stock_balances: StockBalanceRepository
+        self.stock_movements: StockMovementRepository
+        self.gst_registrations: GSTRegistrationRepository
+        self.gst_tax_rates: GSTTaxRateRepository
+        self.hsn_codes: HSNCodeRepository
+        self.sac_codes: SACCodeRepository
+        self.gst_settings: GSTSettingsRepository
+        self.gst_compliance: GSTComplianceRepository
+        self.einvoices: EInvoiceRepository
+        self.eway_bills: EWayBillRepository
+        self.gst_providers: GSTProviderRepository
 
     async def __aenter__(self) -> Self:
         """Open a session and bind repositories to the transaction scope."""
@@ -86,6 +146,17 @@ class SQLAlchemyUnitOfWork(UnitOfWork):
         self.refresh_tokens = IdentityRefreshTokenRepository(self._session)
         self.businesses = BusinessRepository(self._session)
         self.business_memberships = BusinessMembershipRepository(self._session)
+        self.documents = DocumentRepository(self._session)
+        self.document_pages = DocumentPageRepository(self._session)
+        self.ocr_results = OCRResultRepository(self._session)
+        self.extracted_documents = ExtractedDocumentRepository(self._session)
+        self.extracted_fields = ExtractedFieldRepository(self._session)
+        self.extraction_reviews = ExtractionReviewRepository(self._session)
+        self.automation_runs = AutomationRunRepository(self._session)
+        self.validation_issues = ValidationIssueRepository(self._session)
+        self.document_reviews = DocumentReviewRepository(self._session)
+        self.review_revisions = ReviewRevisionRepository(self._session)
+        self.review_decisions = ReviewDecisionRepository(self._session)
         self.chart_of_accounts = ChartOfAccountsRepository(self._session)
         self.journals = JournalRepository(self._session)
         self.ledgers = LedgerRepository(self._session)
@@ -103,6 +174,19 @@ class SQLAlchemyUnitOfWork(UnitOfWork):
         self.suppliers = SupplierRepository(self._session)
         self.purchase_invoices = PurchaseInvoiceRepository(self._session)
         self.purchase_invoice_lines = PurchaseInvoiceLineRepository(self._session)
+        self.products = ProductRepository(self._session)
+        self.warehouses = WarehouseRepository(self._session)
+        self.stock_balances = StockBalanceRepository(self._session)
+        self.stock_movements = StockMovementRepository(self._session)
+        self.gst_registrations = GSTRegistrationRepository(self._session)
+        self.gst_tax_rates = GSTTaxRateRepository(self._session)
+        self.hsn_codes = HSNCodeRepository(self._session)
+        self.sac_codes = SACCodeRepository(self._session)
+        self.gst_settings = GSTSettingsRepository(self._session)
+        self.gst_compliance = GSTComplianceRepository(self._session)
+        self.einvoices = EInvoiceRepository(self._session)
+        self.eway_bills = EWayBillRepository(self._session)
+        self.gst_providers = GSTProviderRepository(self._session)
         return self
 
     async def __aexit__(

@@ -36,6 +36,14 @@ class Settings(BaseSettings):
     identity_access_token_expire_minutes: int = 15
     identity_refresh_token_expire_days: int = 30
 
+    document_storage_path: str = "storage/documents"
+    document_max_upload_size_bytes: int = 10 * 1024 * 1024
+    ocr_provider: str = "tesseract"
+    ocr_languages: str = "eng"
+    tesseract_path: str | None = None
+    max_ocr_pages: int = 10
+    ocr_timeout: int = 60
+
     log_level: str = "INFO"
 
 

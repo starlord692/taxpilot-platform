@@ -46,6 +46,7 @@ from app.modules.purchases.services.purchase_service import (
     PurchaseAccountingKernel,
     PurchaseLinePersistenceRepository,
     PurchasePersistenceRepository,
+    PurchaseStockEngine,
     PurchaseSupplierRepository,
     PurchaseUnitOfWork,
 )
@@ -385,6 +386,19 @@ class FakePurchaseAccountingKernel:
         return object()
 
 
+class FakePurchaseStockEngine:
+    """Fake inventory engine for purchase service tests."""
+
+    def __init__(self) -> None:
+        """Initialize captured inventory calls."""
+        self.purchases: list[PurchaseInvoice] = []
+
+    async def receive_purchase(self, purchase_invoice: PurchaseInvoice) -> object:
+        """Capture purchase receipt call."""
+        self.purchases.append(purchase_invoice)
+        return object()
+
+
 def build_supplier(*, is_active: bool = True) -> Supplier:
     """Build a supplier model."""
     return Supplier(
@@ -483,6 +497,7 @@ def build_purchase_service(
     uow: FakePurchaseUnitOfWork,
     dispatcher: CapturingEventDispatcher,
     accounting_kernel: FakePurchaseAccountingKernel | None = None,
+    stock_engine: FakePurchaseStockEngine | None = None,
 ) -> PurchaseService:
     """Build purchase service with fake dependencies."""
     return PurchaseService(
@@ -492,6 +507,7 @@ def build_purchase_service(
             PurchaseAccountingKernel | None,
             accounting_kernel,
         ),
+        stock_engine=cast(PurchaseStockEngine | None, stock_engine),
     )
 
 
@@ -651,7 +667,13 @@ async def test_purchase_status_transitions_and_events() -> None:
         purchase_repository=FakePurchaseRepository([purchase]),
     )
     accounting_kernel = FakePurchaseAccountingKernel()
-    service = build_purchase_service(uow, dispatcher, accounting_kernel)
+    stock_engine = FakePurchaseStockEngine()
+    service = build_purchase_service(
+        uow,
+        dispatcher,
+        accounting_kernel,
+        stock_engine,
+    )
 
     approved = await service.approve_purchase(purchase.id)
     received = await service.mark_received(purchase.id)
@@ -665,6 +687,7 @@ async def test_purchase_status_transitions_and_events() -> None:
     assert isinstance(dispatcher.events[2], PurchasePaidEvent)
     assert accounting_kernel.purchase_ids == [purchase.id]
     assert accounting_kernel.payment_purchase_ids == [purchase.id]
+    assert stock_engine.purchases == [purchase]
 
 
 async def test_purchase_cancellation_rules() -> None:

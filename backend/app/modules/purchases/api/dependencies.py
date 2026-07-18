@@ -10,6 +10,9 @@ from app.common.unit_of_work import SQLAlchemyUnitOfWork
 from app.core.database import database_state, initialize_database
 from app.modules.accounting.kernel import AccountingKernelService
 from app.modules.accounting.kernel.accounting_kernel import AccountingKernelUnitOfWork
+from app.modules.gst.api.dependencies import get_gst_calculation_service
+from app.modules.inventory.services import StockEngine
+from app.modules.inventory.services.stock_engine import StockEngineUnitOfWork
 from app.modules.purchases.services import PurchaseService, SupplierService
 from app.modules.purchases.services.purchase_service import PurchaseUnitOfWork
 from app.modules.purchases.services.supplier_service import SupplierUnitOfWork
@@ -63,6 +66,19 @@ def get_accounting_kernel_service() -> AccountingKernelService:
     )
 
 
+def get_stock_engine() -> StockEngine:
+    """Provide the Inventory Stock Movement Engine."""
+    session_factory = get_session_factory()
+    unit_of_work_factory = cast(
+        Callable[[], StockEngineUnitOfWork],
+        lambda: SQLAlchemyUnitOfWork(session_factory),
+    )
+    return StockEngine(
+        unit_of_work_factory=unit_of_work_factory,
+        event_dispatcher=get_event_dispatcher(),
+    )
+
+
 def get_purchase_service() -> PurchaseService:
     """Provide the purchase service with injected dependencies."""
     session_factory = get_session_factory()
@@ -74,4 +90,6 @@ def get_purchase_service() -> PurchaseService:
         unit_of_work_factory=unit_of_work_factory,
         event_dispatcher=get_event_dispatcher(),
         accounting_kernel=get_accounting_kernel_service(),
+        stock_engine=get_stock_engine(),
+        gst_calculation_service=get_gst_calculation_service(),
     )

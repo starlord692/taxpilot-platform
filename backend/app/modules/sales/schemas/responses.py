@@ -4,7 +4,7 @@ import uuid
 from datetime import date
 from decimal import Decimal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.modules.sales.models import InvoiceStatus, PaymentMethod
 
@@ -47,7 +47,23 @@ class InvoiceLineResponse(SalesResponseBase):
     unit_price: Decimal = Field(description="Unit price.")
     discount: Decimal = Field(description="Line discount amount.")
     tax_rate: Decimal = Field(description="Line tax rate percentage.")
+    cgst_amount: Decimal = Field(description="Line CGST amount.")
+    sgst_amount: Decimal = Field(description="Line SGST amount.")
+    igst_amount: Decimal = Field(description="Line IGST amount.")
+    cess_amount: Decimal = Field(description="Line cess amount.")
     line_total: Decimal = Field(description="Line total amount.")
+
+    @field_validator(
+        "cgst_amount",
+        "sgst_amount",
+        "igst_amount",
+        "cess_amount",
+        mode="before",
+    )
+    @classmethod
+    def default_missing_gst_component(cls, value: Decimal | None) -> Decimal:
+        """Default legacy missing GST component values to zero."""
+        return value or Decimal("0.00")
 
 
 class PaymentResponse(SalesResponseBase):

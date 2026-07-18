@@ -31,6 +31,10 @@ class PurchaseInvoiceLineCreate(BaseModel):
         description="Line tax rate percentage.",
         examples=["18.00"],
     )
+    cgst_amount: Decimal = Field(default=Decimal("0.00"), examples=["90.00"])
+    sgst_amount: Decimal = Field(default=Decimal("0.00"), examples=["90.00"])
+    igst_amount: Decimal = Field(default=Decimal("0.00"), examples=["0.00"])
+    cess_amount: Decimal = Field(default=Decimal("0.00"), examples=["0.00"])
     line_total: Decimal = Field(description="Line total amount.", examples=["1180.00"])
 
     @field_validator("description")
@@ -49,7 +53,15 @@ class PurchaseInvoiceLineCreate(BaseModel):
         """Validate positive quantity."""
         return validate_positive_decimal(value, field_name="quantity")
 
-    @field_validator("unit_cost", "tax_rate", "line_total")
+    @field_validator(
+        "unit_cost",
+        "tax_rate",
+        "cgst_amount",
+        "sgst_amount",
+        "igst_amount",
+        "cess_amount",
+        "line_total",
+    )
     @classmethod
     def validate_non_negative_amounts(cls, value: Decimal) -> Decimal:
         """Validate non-negative decimal values."""
@@ -82,6 +94,10 @@ class PurchaseInvoiceLineUpdate(BaseModel):
         description="Updated line tax rate percentage.",
         examples=["18.00"],
     )
+    cgst_amount: Decimal | None = Field(default=None, examples=["90.00"])
+    sgst_amount: Decimal | None = Field(default=None, examples=["90.00"])
+    igst_amount: Decimal | None = Field(default=None, examples=["0.00"])
+    cess_amount: Decimal | None = Field(default=None, examples=["0.00"])
     line_total: Decimal | None = Field(
         default=None,
         description="Updated line total amount.",
@@ -108,7 +124,15 @@ class PurchaseInvoiceLineUpdate(BaseModel):
             return None
         return validate_positive_decimal(value, field_name="quantity")
 
-    @field_validator("unit_cost", "tax_rate", "line_total")
+    @field_validator(
+        "unit_cost",
+        "tax_rate",
+        "cgst_amount",
+        "sgst_amount",
+        "igst_amount",
+        "cess_amount",
+        "line_total",
+    )
     @classmethod
     def validate_non_negative_amounts(
         cls,
@@ -129,4 +153,20 @@ class PurchaseInvoiceLineResponse(PurchaseResponseBase):
     quantity: Decimal = Field(description="Line quantity.")
     unit_cost: Decimal = Field(description="Line unit cost.")
     tax_rate: Decimal = Field(description="Line tax rate percentage.")
+    cgst_amount: Decimal = Field(description="Line CGST amount.")
+    sgst_amount: Decimal = Field(description="Line SGST amount.")
+    igst_amount: Decimal = Field(description="Line IGST amount.")
+    cess_amount: Decimal = Field(description="Line cess amount.")
     line_total: Decimal = Field(description="Line total amount.")
+
+    @field_validator(
+        "cgst_amount",
+        "sgst_amount",
+        "igst_amount",
+        "cess_amount",
+        mode="before",
+    )
+    @classmethod
+    def default_missing_gst_component(cls, value: Decimal | None) -> Decimal:
+        """Default legacy missing GST component values to zero."""
+        return value or Decimal("0.00")

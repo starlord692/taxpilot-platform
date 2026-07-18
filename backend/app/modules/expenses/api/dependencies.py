@@ -13,6 +13,7 @@ from app.modules.accounting.kernel.accounting_kernel import AccountingKernelUnit
 from app.modules.expenses.services import ExpenseService, VendorService
 from app.modules.expenses.services.expense_service import ExpenseUnitOfWork
 from app.modules.expenses.services.vendor_service import VendorUnitOfWork
+from app.modules.gst.api.dependencies import get_gst_calculation_service
 
 
 def get_session_factory() -> Callable[[], AsyncSession]:
@@ -74,4 +75,5 @@ def get_expense_service() -> ExpenseService:
         unit_of_work_factory=unit_of_work_factory,
         event_dispatcher=get_event_dispatcher(),
         accounting_kernel=get_accounting_kernel_service(),
+        gst_calculation_service=get_gst_calculation_service(),
     )

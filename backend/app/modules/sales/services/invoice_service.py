@@ -7,6 +7,11 @@ from decimal import ROUND_HALF_UP, Decimal
 from typing import Protocol
 
 from app.common.events import EventDispatcher
+from app.modules.gst.services import (
+    GSTCalculationLineInput,
+    GSTCalculationService,
+    GSTSupplyType,
+)
 from app.modules.sales.events import (
     InvoiceCancelledEvent,
     InvoiceCreatedEvent,
@@ -136,6 +141,14 @@ class SalesAccountingKernel(Protocol):
         ...
 
 
+class SalesStockEngine(Protocol):
+    """Inventory integration behavior required by invoice service."""
+
+    async def issue_sale(self, sales_invoice: SalesInvoice) -> object:
+        """Issue invoice stock movements."""
+        ...
+
+
 class SalesInvoiceService:
     """Coordinate sales invoice lifecycle operations."""
 
@@ -145,11 +158,17 @@ class SalesInvoiceService:
         unit_of_work_factory: UnitOfWorkFactory,
         event_dispatcher: EventDispatcher,
         accounting_kernel: SalesAccountingKernel | None = None,
+        stock_engine: SalesStockEngine | None = None,
+        gst_calculation_service: GSTCalculationService | None = None,
     ) -> None:
         """Initialize service dependencies."""
         self._unit_of_work_factory = unit_of_work_factory
         self._event_dispatcher = event_dispatcher
         self._accounting_kernel = accounting_kernel
+        self._stock_engine = stock_engine
+        self._gst_calculation_service = (
+            gst_calculation_service or GSTCalculationService(event_dispatcher)
+        )
 
     async def create_invoice(
         self,
@@ -240,15 +259,17 @@ class SalesInvoiceService:
 
     async def issue_invoice(self, invoice_id: uuid.UUID) -> InvoiceResponse:
         """Issue a draft invoice."""
-        response = await self._transition_invoice(
+        invoice = await self._transition_invoice_model(
             invoice_id,
             target_status=InvoiceStatus.ISSUED,
             allowed_statuses={InvoiceStatus.DRAFT},
             event_name="issued",
         )
+        if self._stock_engine is not None:
+            await self._stock_engine.issue_sale(invoice)
         if self._accounting_kernel is not None:
             await self._accounting_kernel.record_sales_invoice(invoice_id)
-        return response
+        return InvoiceResponse.model_validate(invoice)
 
     async def cancel_invoice(self, invoice_id: uuid.UUID) -> InvoiceResponse:
         """Cancel an invoice."""
@@ -290,6 +311,23 @@ class SalesInvoiceService:
         event_name: str,
     ) -> InvoiceResponse:
         """Apply an invoice lifecycle status transition."""
+        invoice = await self._transition_invoice_model(
+            invoice_id,
+            target_status=target_status,
+            allowed_statuses=allowed_statuses,
+            event_name=event_name,
+        )
+        return InvoiceResponse.model_validate(invoice)
+
+    async def _transition_invoice_model(
+        self,
+        invoice_id: uuid.UUID,
+        *,
+        target_status: InvoiceStatus,
+        allowed_statuses: set[InvoiceStatus],
+        event_name: str,
+    ) -> SalesInvoice:
+        """Apply an invoice lifecycle status transition and return the model."""
         async with self._unit_of_work_factory() as uow:
             invoice = await self._get_existing_invoice(uow, invoice_id)
             if invoice.status not in allowed_statuses:
@@ -305,8 +343,7 @@ class SalesInvoiceService:
             invoice = await uow.sales_invoices.mark_status(invoice, target_status)
             await self._dispatch_status_event(invoice, event_name)
             await uow.commit()
-
-        return InvoiceResponse.model_validate(invoice)
+        return invoice
 
     async def _get_or_create_customer(
         self,
@@ -410,14 +447,29 @@ class SalesInvoiceService:
                     "Line discount cannot exceed line gross amount"
                 )
             taxable_line_amount = self._money(gross - discount)
-            line_tax = self._money(
-                taxable_line_amount * line.tax_rate / TAX_PERCENT_DIVISOR
+            breakdown = self._gst_calculation_service.calculate_line(
+                GSTCalculationLineInput(
+                    description=line.description,
+                    quantity=Decimal("1.00"),
+                    unit_amount=taxable_line_amount,
+                    tax_rate=line.tax_rate,
+                    supply_type=GSTSupplyType.INTRA_STATE,
+                )
             )
-            line_total = self._money(taxable_line_amount + line_tax)
-            prepared_lines.append(line.model_copy(update={"line_total": line_total}))
+            prepared_lines.append(
+                line.model_copy(
+                    update={
+                        "cgst_amount": breakdown.cgst_amount,
+                        "sgst_amount": breakdown.sgst_amount,
+                        "igst_amount": breakdown.igst_amount,
+                        "cess_amount": breakdown.cess_amount,
+                        "line_total": breakdown.line_total,
+                    }
+                )
+            )
             subtotal += gross
             discount_amount += discount
-            tax_amount += line_tax
+            tax_amount += breakdown.tax_amount
 
         taxable_amount = self._money(subtotal - discount_amount)
         total_amount = self._money(taxable_amount + tax_amount)

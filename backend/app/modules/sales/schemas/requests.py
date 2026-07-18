@@ -207,6 +207,10 @@ class InvoiceLineRequest(BaseModel):
         description="Line tax rate percentage.",
         examples=["18.00"],
     )
+    cgst_amount: Decimal = Field(default=Decimal("0.00"), examples=["85.50"])
+    sgst_amount: Decimal = Field(default=Decimal("0.00"), examples=["85.50"])
+    igst_amount: Decimal = Field(default=Decimal("0.00"), examples=["0.00"])
+    cess_amount: Decimal = Field(default=Decimal("0.00"), examples=["0.00"])
     line_total: Decimal = Field(description="Line total amount.", examples=["1121.00"])
 
     @field_validator("quantity")
@@ -221,7 +225,15 @@ class InvoiceLineRequest(BaseModel):
         """Validate positive unit price."""
         return validate_positive_decimal(value, field_name="unit_price")
 
-    @field_validator("discount", "tax_rate", "line_total")
+    @field_validator(
+        "discount",
+        "tax_rate",
+        "cgst_amount",
+        "sgst_amount",
+        "igst_amount",
+        "cess_amount",
+        "line_total",
+    )
     @classmethod
     def validate_non_negative_amounts(cls, value: Decimal) -> Decimal:
         """Validate non-negative decimal values."""

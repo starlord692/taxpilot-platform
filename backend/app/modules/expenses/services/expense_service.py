@@ -30,9 +30,13 @@ from app.modules.expenses.schemas import (
     ExpenseResponse,
     ExpenseUpdate,
 )
+from app.modules.gst.services import (
+    GSTCalculationLineInput,
+    GSTCalculationService,
+    GSTSupplyType,
+)
 
 MONEY_PLACES = Decimal("0.01")
-TAX_PERCENT_DIVISOR = Decimal("100.00")
 
 
 class ExpenseVendorRepository(Protocol):
@@ -154,11 +158,15 @@ class ExpenseService:
         unit_of_work_factory: UnitOfWorkFactory,
         event_dispatcher: EventDispatcher,
         accounting_kernel: ExpenseAccountingKernel | None = None,
+        gst_calculation_service: GSTCalculationService | None = None,
     ) -> None:
         """Initialize service dependencies."""
         self._unit_of_work_factory = unit_of_work_factory
         self._event_dispatcher = event_dispatcher
         self._accounting_kernel = accounting_kernel
+        self._gst_calculation_service = (
+            gst_calculation_service or GSTCalculationService(event_dispatcher)
+        )
 
     async def create_expense(
         self,
@@ -442,6 +450,10 @@ class ExpenseService:
                     quantity=line.quantity,
                     unit_cost=line.unit_cost,
                     tax_rate=line.tax_rate or Decimal("0.00"),
+                    cgst_amount=line.cgst_amount or Decimal("0.00"),
+                    sgst_amount=line.sgst_amount or Decimal("0.00"),
+                    igst_amount=line.igst_amount or Decimal("0.00"),
+                    cess_amount=line.cess_amount or Decimal("0.00"),
                     line_total=line.line_total,
                 )
             )
@@ -460,11 +472,28 @@ class ExpenseService:
         tax_amount = Decimal("0.00")
         for line in lines:
             line_subtotal = self._money(line.quantity * line.unit_cost)
-            line_tax = self._money(line_subtotal * line.tax_rate / TAX_PERCENT_DIVISOR)
-            line_total = self._money(line_subtotal + line_tax)
-            prepared_lines.append(line.model_copy(update={"line_total": line_total}))
+            breakdown = self._gst_calculation_service.calculate_line(
+                GSTCalculationLineInput(
+                    description=line.description,
+                    quantity=Decimal("1.00"),
+                    unit_amount=line_subtotal,
+                    tax_rate=line.tax_rate,
+                    supply_type=GSTSupplyType.INTRA_STATE,
+                )
+            )
+            prepared_lines.append(
+                line.model_copy(
+                    update={
+                        "cgst_amount": breakdown.cgst_amount,
+                        "sgst_amount": breakdown.sgst_amount,
+                        "igst_amount": breakdown.igst_amount,
+                        "cess_amount": breakdown.cess_amount,
+                        "line_total": breakdown.line_total,
+                    }
+                )
+            )
             subtotal += line_subtotal
-            tax_amount += line_tax
+            tax_amount += breakdown.tax_amount
 
         subtotal = self._money(subtotal)
         tax_amount = self._money(tax_amount)
