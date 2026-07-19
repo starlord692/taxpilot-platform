@@ -1,0 +1,14 @@
+export type PurchaseStatus = "draft" | "approved" | "received" | "paid" | "cancelled";
+export type PaginationMeta = { page: number; size: number; total: number; pages: number };
+export type PaginatedEnvelope<T> = { success: boolean; message: string; data: T[]; meta: PaginationMeta };
+export type SuccessEnvelope<T> = { success: boolean; message: string; data: T };
+export type SupplierListItem = { id: string; business_id: string; supplier_code: string; name: string; email: string | null; phone: string | null; payment_terms: string | null; is_active: boolean };
+export type Supplier = SupplierListItem & { gstin: string | null; pan: string | null; address: string | null };
+export type SupplierInput = { name: string; email?: string | null; phone?: string | null; gstin?: string | null; pan?: string | null; address?: string | null; payment_terms?: string | null; is_active?: boolean };
+export type PurchaseLineInput = { description: string; quantity: number; unit_cost: number; tax_rate: number; cgst_amount?: number; sgst_amount?: number; igst_amount?: number; cess_amount?: number; line_total: number };
+export type PurchaseLine = Omit<PurchaseLineInput, "cgst_amount" | "sgst_amount" | "igst_amount" | "cess_amount"> & { id: string; purchase_invoice_id: string; cgst_amount: number; sgst_amount: number; igst_amount: number; cess_amount: number };
+export type PurchaseListItem = { id: string; business_id: string; supplier_id: string; purchase_number: string; invoice_number: string; invoice_date: string; due_date: string | null; status: PurchaseStatus; total_amount: string | number; attachment_count: number };
+export type Purchase = PurchaseListItem & { subtotal: string | number; tax_amount: string | number; notes: string | null; supplier: Supplier | null; lines: PurchaseLine[] };
+export type PurchaseInput = { supplier_id: string; invoice_number: string; invoice_date: string; due_date?: string | null; subtotal: number; tax_amount: number; total_amount: number; notes?: string | null; attachment_count: number; status?: PurchaseStatus; lines: PurchaseLineInput[] };
+export type PurchaseQuery = { page: number; pageSize: number; search?: string; sort?: string; supplier?: string; status?: PurchaseStatus; invoiceDateFrom?: string; invoiceDateTo?: string; dueDateFrom?: string; dueDateTo?: string };
+export type SupplierQuery = { page: number; pageSize: number; search?: string; sort?: string };

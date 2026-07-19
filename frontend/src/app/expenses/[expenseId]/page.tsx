@@ -1,0 +1,1 @@
+import{ExpenseDetail}from"@/components/expenses/expense-detail";export default async function Page({params}:{params:Promise<{expenseId:string}>}){return <ExpenseDetail id={(await params).expenseId}/>}

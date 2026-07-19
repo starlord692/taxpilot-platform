@@ -1,0 +1,3 @@
+import { cn } from "@/lib/utils";
+export function getInitials(name: string, email: string) { const parts = name.trim().split(/\s+/).filter(Boolean); if (parts.length) return parts.slice(0, 2).map((part) => part[0]).join("").toUpperCase(); return email.slice(0, 2).toUpperCase(); }
+export function UserAvatar({ name, email, className }: { name: string; email: string; className?: string }) { return <span aria-label={`${name || email} avatar`} className={cn("grid size-8 shrink-0 place-items-center rounded-full border bg-secondary text-xs font-semibold", className)}>{getInitials(name, email)}</span>; }

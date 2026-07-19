@@ -1,0 +1,4 @@
+import { z } from "zod";
+const name = z.string().trim().min(1, "This field is required").max(100, "Use 100 characters or fewer");
+export const registerSchema = z.object({ first_name: name, last_name: name, display_name: z.string().trim().max(150, "Use 150 characters or fewer").optional(), email: z.string().trim().email("Enter a valid email address").transform((value) => value.toLowerCase()), password: z.string().min(12, "Use at least 12 characters").regex(/[a-z]/, "Add a lowercase letter").regex(/[A-Z]/, "Add an uppercase letter").regex(/[0-9]/, "Add a number").regex(/[^A-Za-z0-9]/, "Add a special character"), confirm_password: z.string().min(1, "Confirm your password") }).refine((values) => values.password === values.confirm_password, { path: ["confirm_password"], message: "Passwords do not match" });
+export type RegisterFormValues = z.input<typeof registerSchema>;

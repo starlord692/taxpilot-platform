@@ -1,0 +1,1 @@
+import{WarehouseForm}from"@/components/inventory/warehouse-form";export default async function Page({params}:{params:Promise<{warehouseId:string}>}){return <WarehouseForm id={(await params).warehouseId}/>}

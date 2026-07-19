@@ -1,0 +1,1 @@
+import { PurchasesShell } from "@/components/purchases/purchases-shell"; export default function Layout({ children }: { children: React.ReactNode }) { return <PurchasesShell>{children}</PurchasesShell>; }

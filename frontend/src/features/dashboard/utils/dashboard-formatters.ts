@@ -1,0 +1,3 @@
+export function formatDate(value: string | number | Date, locale = "en-IN") { return new Intl.DateTimeFormat(locale, { day: "numeric", month: "short", year: "numeric" }).format(new Date(value)); }
+export function formatCurrency(value: string | number, currency = "INR", locale = "en-IN") { const number = typeof value === "string" ? Number(value) : value; return new Intl.NumberFormat(locale, { style: "currency", currency, maximumFractionDigits: 2 }).format(number); }
+export function formatSyncTime(timestamp: number | null, locale = "en-IN") { if (!timestamp) return "Not synchronized"; return new Intl.DateTimeFormat(locale, { hour: "numeric", minute: "2-digit", second: "2-digit" }).format(new Date(timestamp)); }

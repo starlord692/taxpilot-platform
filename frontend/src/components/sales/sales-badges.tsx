@@ -1,0 +1,5 @@
+import { cn } from "@/lib/utils";
+import type { InvoiceStatus } from "@/features/sales/types/sales.types";
+import { titleCase } from "@/features/sales/utils/sales-format";
+export function InvoiceStatusBadge({ status }: { status: InvoiceStatus }) { const color = status === "paid" ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400" : status === "cancelled" ? "bg-red-500/10 text-red-700 dark:text-red-400" : status === "issued" ? "bg-blue-500/10 text-blue-700 dark:text-blue-400" : "bg-muted text-muted-foreground"; return <span className={cn("inline-flex rounded-full px-2.5 py-1 text-xs font-medium", color)}>{titleCase(status)}</span>; }
+export function PaymentBadge({ label }: { label: string }) { const color = label === "Paid" ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400" : label === "Overdue" || label === "Cancelled" ? "bg-red-500/10 text-red-700 dark:text-red-400" : "bg-amber-500/10 text-amber-700 dark:text-amber-400"; return <span className={cn("inline-flex rounded-full px-2.5 py-1 text-xs font-medium", color)}>{label}</span>; }

@@ -1,0 +1,1 @@
+import{Unavailable}from"@/components/gst/gst-states";export default function Page(){return <Unavailable title="Registration detail unavailable" description="The backend exposes registration lists, creation, update, and deactivation, but no endpoint for retrieving one registration by ID. Details and editing remain available from the verified list response."/>}

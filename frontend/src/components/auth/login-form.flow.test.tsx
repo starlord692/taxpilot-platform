@@ -1,0 +1,8 @@
+import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { LoginForm, safeNextPath } from "./login-form";
+const login = vi.fn(); const replace = vi.fn();
+vi.mock("@/contexts/auth-context", () => ({ useAuth: () => ({ login }) }));
+vi.mock("next/navigation", () => ({ useRouter: () => ({ replace }), useSearchParams: () => new URLSearchParams("next=%2Fworkspace") }));
+describe("login authentication flow", () => { beforeEach(() => { login.mockReset(); replace.mockReset(); }); it("submits credentials and restores the requested internal route", async () => { login.mockResolvedValue(undefined); const user = userEvent.setup(); render(<LoginForm />); await user.type(screen.getByLabelText("Email address"), "owner@example.com"); await user.type(screen.getByLabelText("Password"), "StrongPass123!"); await user.click(screen.getByRole("button", { name: /sign in/i })); expect(login).toHaveBeenCalledWith({ email: "owner@example.com", password: "StrongPass123!" }); expect(replace).toHaveBeenCalledWith("/workspace"); }); it("shows validation without making a request", async () => { const user = userEvent.setup(); render(<LoginForm />); await user.click(screen.getByRole("button", { name: /sign in/i })); expect(await screen.findByText("Enter a valid email address")).toBeVisible(); expect(login).not.toHaveBeenCalled(); }); it("rejects external redirect targets", () => { expect(safeNextPath("//evil.example")).toBe("/"); expect(safeNextPath("https://evil.example")).toBe("/"); }); });

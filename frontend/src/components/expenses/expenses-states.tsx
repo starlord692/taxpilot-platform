@@ -1,0 +1,1 @@
+export{PurchasesLoading as ExpensesLoading,PurchasesEmpty as ExpensesEmpty,PurchasesError as ExpensesError}from"@/components/purchases/purchases-states";export{PurchasesPagination as ExpensesPagination}from"@/components/purchases/purchases-pagination";
