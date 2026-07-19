@@ -1,0 +1,1 @@
+import{cn}from"@/lib/utils";export function StatusBadge({active,label}:{active:boolean;label?:string}){return <span className={cn("inline-flex rounded-full px-2 py-1 text-xs font-medium",active?"bg-emerald-500/10 text-emerald-700 dark:text-emerald-400":"bg-muted text-muted-foreground")}>{label??(active?"Active":"Inactive")}</span>}

@@ -1,0 +1,1 @@
+import{z}from"zod";export const reviewSchema=z.object({decision:z.enum(["approve","reject","request_correction"]),notes:z.string().max(500).nullable(),corrections:z.array(z.object({field_name:z.string().min(1).max(100),new_value:z.string().min(1),reason:z.string().min(3).max(255)}))});export type ReviewValues=z.infer<typeof reviewSchema>;

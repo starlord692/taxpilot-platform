@@ -1,0 +1,2 @@
+import type { PurchaseQuery, SupplierQuery } from "../types/purchases.types";
+export const purchaseKeys = { all: ["purchases"] as const, suppliers: (businessId: string, query: SupplierQuery) => [...purchaseKeys.all, "suppliers", businessId, query] as const, supplier: (id: string) => [...purchaseKeys.all, "supplier", id] as const, invoices: (businessId: string, query: PurchaseQuery) => [...purchaseKeys.all, "invoices", businessId, query] as const, invoice: (id: string) => [...purchaseKeys.all, "invoice", id] as const };

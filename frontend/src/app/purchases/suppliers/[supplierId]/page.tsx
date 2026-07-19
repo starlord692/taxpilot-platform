@@ -1,0 +1,1 @@
+import { SupplierDetail } from "@/components/purchases/supplier-detail"; export default async function Page({ params }: { params: Promise<{ supplierId: string }> }) { return <SupplierDetail id={(await params).supplierId} />; }

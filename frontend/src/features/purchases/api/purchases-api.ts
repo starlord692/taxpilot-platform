@@ -1,0 +1,16 @@
+import { apiClient } from "@/lib/api/client"; import { isPreviewMode } from "@/lib/env";
+import type { PaginatedEnvelope, Purchase, PurchaseInput, PurchaseListItem, PurchaseQuery, Supplier, SupplierInput, SupplierListItem, SupplierQuery, SuccessEnvelope } from "../types/purchases.types";
+const empty = <T,>(page: number, size: number): PaginatedEnvelope<T> => ({ success: true, message: "Preview mode", data: [], meta: { page, size, total: 0, pages: 0 } });
+export const purchasesApi = {
+  async suppliers(businessId: string, query: SupplierQuery) { if (isPreviewMode) return empty<SupplierListItem>(query.page, query.pageSize); const params: Record<string, string | number> = { business_id: businessId, page: query.page, page_size: query.pageSize }; if (query.search) params.search = query.search; else if (query.sort) params.sort = query.sort; return (await apiClient.get<PaginatedEnvelope<SupplierListItem>>("/purchases/suppliers", { params })).data; },
+  async supplier(id: string) { return (await apiClient.get<SuccessEnvelope<Supplier>>(`/purchases/suppliers/${id}`)).data.data; },
+  async createSupplier(businessId: string, input: SupplierInput) { return (await apiClient.post<SuccessEnvelope<Supplier>>("/purchases/suppliers", input, { params: { business_id: businessId } })).data.data; },
+  async updateSupplier(id: string, input: Partial<SupplierInput>) { return (await apiClient.patch<SuccessEnvelope<Supplier>>(`/purchases/suppliers/${id}`, input)).data.data; },
+  async deactivateSupplier(id: string) { await apiClient.delete(`/purchases/suppliers/${id}`); },
+  async reactivateSupplier(id: string) { return (await apiClient.post<SuccessEnvelope<Supplier>>(`/purchases/suppliers/${id}/reactivate`)).data.data; },
+  async invoices(businessId: string, query: PurchaseQuery) { if (isPreviewMode) return empty<PurchaseListItem>(query.page, query.pageSize); const params: Record<string, string | number> = { business_id: businessId, page: query.page, page_size: query.pageSize }; if (query.search) params.search = query.search; else { if (query.sort) params.sort = query.sort; if (query.supplier) params.supplier = query.supplier; if (query.status) params.status = query.status; if (query.invoiceDateFrom) params.invoice_date_from = query.invoiceDateFrom; if (query.invoiceDateTo) params.invoice_date_to = query.invoiceDateTo; if (query.dueDateFrom) params.due_date_from = query.dueDateFrom; if (query.dueDateTo) params.due_date_to = query.dueDateTo; } return (await apiClient.get<PaginatedEnvelope<PurchaseListItem>>("/purchases", { params })).data; },
+  async invoice(id: string) { return (await apiClient.get<SuccessEnvelope<Purchase>>(`/purchases/${id}`)).data.data; },
+  async createInvoice(businessId: string, input: PurchaseInput) { return (await apiClient.post<SuccessEnvelope<Purchase>>("/purchases", input, { params: { business_id: businessId } })).data.data; },
+  async updateInvoice(id: string, input: Partial<PurchaseInput>) { return (await apiClient.patch<SuccessEnvelope<Purchase>>(`/purchases/${id}`, input)).data.data; },
+  async transition(id: string, action: "approve" | "receive" | "pay" | "cancel") { return (await apiClient.post<SuccessEnvelope<Purchase>>(`/purchases/${id}/${action}`)).data.data; },
+};

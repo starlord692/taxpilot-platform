@@ -1,0 +1,3 @@
+import { apiClient } from "@/lib/api/client";
+import type { ApiEnvelope, CurrentUser, LoginInput, RegisterInput, SessionResponse } from "../types/auth.types";
+export const authApi = { async login(input: LoginInput) { const response = await apiClient.post<ApiEnvelope<SessionResponse>>("/identity/session", input); return response.data.data; }, async register(input: RegisterInput) { const response = await apiClient.post<ApiEnvelope<CurrentUser>>("/identity/register", input); return response.data.data; }, async me() { const response = await apiClient.get<CurrentUser>("/identity/me"); return response.data; } };

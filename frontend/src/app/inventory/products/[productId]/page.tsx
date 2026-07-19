@@ -1,0 +1,1 @@
+import{ProductDetail}from"@/components/inventory/product-detail";export default async function Page({params}:{params:Promise<{productId:string}>}){return <ProductDetail id={(await params).productId}/>}

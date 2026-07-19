@@ -1,0 +1,6 @@
+import { z } from "zod";
+export const supplierSchema = z.object({ name: z.string().trim().min(1).max(255), email: z.union([z.literal(""), z.string().email()]).optional(), phone: z.string().trim().optional(), gstin: z.string().trim().optional(), pan: z.string().trim().optional(), address: z.string().trim().optional(), payment_terms: z.string().trim().optional(), is_active: z.boolean() });
+export type SupplierFormValues = z.infer<typeof supplierSchema>;
+export const lineSchema = z.object({ description: z.string().trim().min(1).max(255), quantity: z.number().positive(), unit_cost: z.number().min(0), tax_rate: z.number().min(0), cgst_amount: z.number().min(0), sgst_amount: z.number().min(0), igst_amount: z.number().min(0), cess_amount: z.number().min(0), line_total: z.number().min(0) });
+export const purchaseSchema = z.object({ supplier_id: z.string().uuid(), invoice_number: z.string().trim().min(1).max(50), invoice_date: z.string().min(1), due_date: z.string().nullable(), notes: z.string().nullable(), attachment_count: z.number().int().min(0), lines: z.array(lineSchema).min(1) }).refine((value) => !value.due_date || value.due_date >= value.invoice_date, { path: ["due_date"], message: "Due date cannot be before invoice date." });
+export type PurchaseFormValues = z.infer<typeof purchaseSchema>;

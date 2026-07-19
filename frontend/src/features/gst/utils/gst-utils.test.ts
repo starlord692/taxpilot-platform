@@ -1,0 +1,1 @@
+import{describe,expect,it}from"vitest";import{page,size,title}from"./gst-utils";describe("GST URL utilities",()=>{it("sanitizes pagination without inventing list controls",()=>{expect(page("0")).toBe(1);expect(page("4")).toBe(4);expect(size("50")).toBe(50);expect(size("15")).toBe(20)});it("formats backend enum labels",()=>expect(title("non_resident")).toBe("Non Resident"))});

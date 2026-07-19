@@ -1,0 +1,1 @@
+import{Unavailable}from"@/components/inventory/inventory-states";export default function Page(){return <Unavailable title="Stock movements unavailable" description="The backend exposes current stock balances only. It does not expose a stock movement history endpoint."/>}

@@ -1,0 +1,3 @@
+import { Users } from "lucide-react";
+import { EmptyState } from "@/components/dashboard/empty-state";
+export function MemberTable() { return <section className="rounded-xl border bg-card" aria-labelledby="members-title"><header className="flex items-center gap-2 border-b px-5 py-4"><Users className="size-4 text-muted-foreground" /><h2 id="members-title" className="text-sm font-semibold">Members</h2></header><EmptyState title="Member management unavailable" description="The current backend does not expose a business member-list endpoint. No member information has been generated." /></section>; }
