@@ -1,1 +1,16 @@
-import{describe,expect,it}from"vitest";import{navigation}from"./navigation";describe("application navigation",()=>{it("enables the verified Settings workspace",()=>{expect(navigation.find(x=>x.href==="/settings")).toMatchObject({label:"Settings",disabled:false})});it("keeps unsupported clients disabled",()=>{expect(navigation.find(x=>x.href==="/clients")?.disabled).toBe(true)})});
+import { describe, expect, it } from "vitest";
+import { activeNavigationHref, navigation } from "./navigation";
+
+describe("application navigation", () => {
+  it("contains every application-shell destination", () => {
+    expect(navigation.map(({ label }) => label)).toEqual(expect.arrayContaining([
+      "Business Workspace", "Documents", "Sales", "Purchases", "Expenses",
+      "Customers", "Suppliers", "Inventory", "GST & Tax", "Reports", "Settings",
+    ]));
+  });
+
+  it("selects the most specific nested route", () => {
+    expect(activeNavigationHref("/sales/customers/123")).toBe("/sales/customers");
+    expect(activeNavigationHref("/gst/reports")).toBe("/gst/reports");
+  });
+});
