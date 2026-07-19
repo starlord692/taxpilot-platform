@@ -1,0 +1,4 @@
+import { beforeEach, describe, expect, it } from "vitest";
+import { clearSession, getAccessToken, getSession, setSession } from "./session-storage";
+const user = { id: "u1", email: "user@example.com", roles: ["member"], permissions: [] };
+describe("session management", () => { beforeEach(() => clearSession()); it("persists a valid session for the browser tab", () => { setSession({ accessToken: "jwt", expiresAt: Date.now() + 60_000, user }); expect(getAccessToken()).toBe("jwt"); expect(getSession()?.user.email).toBe(user.email); }); it("removes an expired session", () => { setSession({ accessToken: "old", expiresAt: Date.now() - 1, user }); expect(getSession()).toBeNull(); expect(getAccessToken()).toBeNull(); }); it("clears the session", () => { setSession({ accessToken: "jwt", expiresAt: Date.now() + 60_000, user }); clearSession(); expect(getSession()).toBeNull(); }); });
