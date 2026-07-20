@@ -1,0 +1,7 @@
+import type { UseFormRegister } from "react-hook-form";
+import { Badge } from "@/components/ui/badge";
+import { confidence, title } from "@/features/documents/utils/document-utils";
+import type { ExtractedField } from "@/features/documents/types/documents.types";
+import type { ReviewValues } from "@/features/documents/schemas/review-schema";
+
+export function ExtractedFieldsPanel({ fields, register }: { fields: ExtractedField[]; register: UseFormRegister<ReviewValues> }) { if (!fields.length) return <p className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">No information was found in this document.</p>; return <fieldset className="space-y-3"><legend className="mb-2 text-sm font-semibold">Information found</legend>{fields.map((field, index) => { const score = confidence(field.confidence); return <label className="block rounded-xl border p-3" key={field.id}><span className="flex flex-wrap items-center justify-between gap-2 text-sm"><span className="font-medium">{title(field.field_name)}</span><span className="flex items-center gap-2"><Badge tone={score < 70 ? "warning" : "neutral"}>{score}% confidence</Badge><span className="text-xs text-muted-foreground">{field.source === "ai" ? "TaxPilot assisted" : "Document reading"}</span></span></span><input className="mt-2 h-10 w-full rounded-lg border bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring" aria-label={`Review ${title(field.field_name)}`} {...register(`corrections.${index}.new_value`)} /></label>; })}</fieldset>; }
