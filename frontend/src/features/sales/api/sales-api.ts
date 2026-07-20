@@ -1,5 +1,5 @@
 import { apiClient } from "@/lib/api/client";
-import type { Customer, Invoice, InvoiceSummary, PaginatedEnvelope, SuccessEnvelope } from "../types/sales.types";
+import type { Customer, CustomerInput, Invoice, InvoiceSummary, PaginatedEnvelope, SuccessEnvelope } from "../types/sales.types";
 import { isPreviewMode } from "@/lib/env";
 
 export const salesApi = {
@@ -11,6 +11,12 @@ export const salesApi = {
   async customer(customerId: string) {
     const response = await apiClient.get<SuccessEnvelope<Customer>>(`/sales/customers/${customerId}`);
     return response.data.data;
+  },
+  async createCustomer(businessId: string, input: CustomerInput) {
+    return (await apiClient.post<SuccessEnvelope<Customer>>("/sales/customers", { business_id: businessId, ...input })).data.data;
+  },
+  async updateCustomer(customerId: string, input: Partial<CustomerInput> & { is_active?: boolean }) {
+    return (await apiClient.patch<SuccessEnvelope<Customer>>(`/sales/customers/${customerId}`, input)).data.data;
   },
   async invoices(businessId: string, page: number, pageSize: number) {
     if (isPreviewMode) return { success: true, message: "Preview mode", data: [], meta: { page, size: pageSize, total: 0, pages: 0 } } satisfies PaginatedEnvelope<InvoiceSummary>;
