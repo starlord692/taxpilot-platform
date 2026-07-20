@@ -40,6 +40,9 @@ class CustomerResponse(SalesResponseBase):
 class InvoiceLineResponse(SalesResponseBase):
     """Response schema for an invoice line."""
 
+    catalog_item_id: uuid.UUID | None = Field(
+        default=None, description="Canonical catalog reference when migrated."
+    )
     id: uuid.UUID = Field(description="Invoice line UUID.")
     invoice_id: uuid.UUID = Field(description="Invoice UUID.")
     description: str = Field(description="Line item description.")
@@ -96,6 +99,16 @@ class InvoiceSummaryResponse(SalesResponseBase):
 
 class InvoiceResponse(InvoiceSummaryResponse):
     """Full response schema for a sales invoice."""
+
+    round_off: Decimal = Field(
+        default=Decimal("0.00"), description="Canonical round-off adjustment."
+    )
+
+    @field_validator("round_off", mode="before")
+    @classmethod
+    def default_legacy_round_off(cls, value: Decimal | None) -> Decimal:
+        """Default pre-migration invoice instances to zero round-off."""
+        return value or Decimal("0.00")
 
     subtotal: Decimal = Field(description="Invoice subtotal.")
     discount_amount: Decimal = Field(description="Invoice-level discount amount.")

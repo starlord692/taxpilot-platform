@@ -22,12 +22,18 @@ class SalesInvoiceLine(BaseEntity):
     __tablename__ = "sales_invoice_lines"
     __table_args__ = (
         Index("ix_sales_invoice_lines_invoice_id", "invoice_id"),
+        Index("ix_sales_invoice_lines_catalog_item_id", "catalog_item_id"),
     )
 
     invoice_id: Mapped[uuid.UUID] = mapped_column(
         PostgresUUID(as_uuid=True),
         ForeignKey("sales_invoices.id", ondelete="CASCADE"),
         nullable=False,
+    )
+    catalog_item_id: Mapped[uuid.UUID | None] = mapped_column(
+        PostgresUUID(as_uuid=True),
+        ForeignKey("catalog_items.id", ondelete="RESTRICT"),
+        nullable=True,
     )
     description: Mapped[str] = mapped_column(String(255), nullable=False)
     quantity: Mapped[Decimal] = mapped_column(

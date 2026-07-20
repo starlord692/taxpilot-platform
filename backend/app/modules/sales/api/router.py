@@ -11,9 +11,16 @@ from app.core.responses import ErrorResponse, PaginatedApiResponse, SuccessRespo
 from app.modules.business.exceptions import BusinessNotMemberException
 from app.modules.identity.dependencies import CurrentUser
 from app.modules.sales.api.dependencies import (
+    get_canonical_sales_invoice_service,
     get_sales_invoice_service,
     get_sales_unit_of_work,
 )
+from app.modules.sales.canonical_schemas import (
+    CanonicalInvoiceDraftRequest,
+    CanonicalInvoiceDraftUpdate,
+    CanonicalInvoiceResponse,
+)
+from app.modules.sales.canonical_service import CanonicalSalesInvoiceService
 from app.modules.sales.exceptions import (
     SalesCustomerNotFoundException,
     SalesDuplicateCustomerException,
@@ -40,6 +47,132 @@ SalesUnitOfWorkDependency = Annotated[
     Any,
     Depends(get_sales_unit_of_work),
 ]
+CanonicalSalesServiceDependency = Annotated[
+    CanonicalSalesInvoiceService, Depends(get_canonical_sales_invoice_service)
+]
+
+
+@router.get(
+    "/workflow/invoices",
+    response_model=PaginatedApiResponse[InvoiceSummaryResponse],
+)
+async def list_canonical_invoices(
+    current_user: CurrentUser,
+    uow: SalesUnitOfWorkDependency,
+    business_id: Annotated[uuid.UUID, Query(description="Business UUID.")],
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=100)] = 20,
+) -> PaginatedApiResponse[InvoiceSummaryResponse]:
+    """List only invoices migrated to the canonical CatalogItem workflow."""
+    async with uow:
+        await _ensure_business_member(uow, business_id, current_user.id)
+        result = await uow.sales_invoices.list_canonical_business_invoices(
+            business_id,
+            PaginationParams(page=page, size=page_size),
+        )
+    return PaginatedApiResponse(
+        success=True,
+        message="Canonical invoices returned",
+        data=[InvoiceSummaryResponse.model_validate(item) for item in result.items],
+        meta=result.meta,
+    )
+
+
+@router.post(
+    "/workflow/invoices",
+    response_model=SuccessResponse[CanonicalInvoiceResponse],
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_canonical_invoice(
+    request: CanonicalInvoiceDraftRequest,
+    current_user: CurrentUser,
+    uow: SalesUnitOfWorkDependency,
+    service: CanonicalSalesServiceDependency,
+) -> SuccessResponse[CanonicalInvoiceResponse]:
+    async with uow:
+        await _ensure_business_member(uow, request.business_id, current_user.id)
+    return SuccessResponse(
+        success=True,
+        message="Canonical invoice draft created",
+        data=await service.create_draft(request),
+    )
+
+
+@router.get(
+    "/workflow/invoices/{invoice_id}",
+    response_model=SuccessResponse[CanonicalInvoiceResponse],
+)
+async def get_canonical_invoice(
+    invoice_id: uuid.UUID,
+    current_user: CurrentUser,
+    uow: SalesUnitOfWorkDependency,
+    service: CanonicalSalesServiceDependency,
+) -> SuccessResponse[CanonicalInvoiceResponse]:
+    async with uow:
+        await _get_invoice_for_user(uow, invoice_id, current_user.id)
+    return SuccessResponse(
+        success=True,
+        message="Canonical invoice returned",
+        data=await service.get(invoice_id),
+    )
+
+
+@router.patch(
+    "/workflow/invoices/{invoice_id}",
+    response_model=SuccessResponse[CanonicalInvoiceResponse],
+)
+async def update_canonical_invoice(
+    invoice_id: uuid.UUID,
+    request: CanonicalInvoiceDraftUpdate,
+    current_user: CurrentUser,
+    uow: SalesUnitOfWorkDependency,
+    service: CanonicalSalesServiceDependency,
+) -> SuccessResponse[CanonicalInvoiceResponse]:
+    async with uow:
+        await _get_invoice_for_user(uow, invoice_id, current_user.id)
+    return SuccessResponse(
+        success=True,
+        message="Canonical invoice draft updated",
+        data=await service.update_draft(invoice_id, request),
+    )
+
+
+@router.post(
+    "/workflow/invoices/{invoice_id}/issue",
+    response_model=SuccessResponse[CanonicalInvoiceResponse],
+)
+async def issue_canonical_invoice(
+    invoice_id: uuid.UUID,
+    current_user: CurrentUser,
+    uow: SalesUnitOfWorkDependency,
+    service: CanonicalSalesServiceDependency,
+) -> SuccessResponse[CanonicalInvoiceResponse]:
+    async with uow:
+        await _get_invoice_for_user(uow, invoice_id, current_user.id)
+    return SuccessResponse(
+        success=True,
+        message="Canonical invoice issued",
+        data=await service.issue(invoice_id),
+    )
+
+
+@router.post(
+    "/workflow/invoices/{invoice_id}/cancel",
+    response_model=SuccessResponse[CanonicalInvoiceResponse],
+)
+async def cancel_canonical_invoice(
+    invoice_id: uuid.UUID,
+    current_user: CurrentUser,
+    uow: SalesUnitOfWorkDependency,
+    service: CanonicalSalesServiceDependency,
+) -> SuccessResponse[CanonicalInvoiceResponse]:
+    async with uow:
+        await _get_invoice_for_user(uow, invoice_id, current_user.id)
+    return SuccessResponse(
+        success=True,
+        message="Canonical invoice cancelled",
+        data=await service.cancel(invoice_id),
+    )
 
 
 @router.post(

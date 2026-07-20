@@ -189,6 +189,11 @@ class InvoiceLineRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
+    catalog_item_id: uuid.UUID | None = Field(
+        default=None,
+        description="Canonical catalog item UUID; nullable for legacy compatibility.",
+    )
+
     description: str = Field(
         description="Line item description.",
         examples=["Monthly bookkeeping"],
@@ -359,6 +364,9 @@ class InvoiceUpdateRequest(BaseModel):
     total_amount: Decimal | None = Field(
         default=None,
         description="Updated total amount.",
+    )
+    round_off: Decimal | None = Field(
+        default=None, description="Canonical round-off adjustment."
     )
     notes: str | None = Field(default=None, description="Updated invoice notes.")
     lines: list[InvoiceLineRequest] | None = Field(
