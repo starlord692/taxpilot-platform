@@ -100,6 +100,28 @@ class SalesInvoiceRepository(BaseRepository[SalesInvoice]):
         )
         return await self._paginate(statement, pagination)
 
+    async def list_intelligence_history(
+        self,
+        *,
+        business_id: uuid.UUID,
+        customer_id: uuid.UUID,
+        exclude_id: uuid.UUID,
+    ) -> list[SalesInvoice]:
+        """Return bounded canonical history for advisory comparisons."""
+        statement = (
+            self._base_statement()
+            .where(
+                SalesInvoice.business_id == business_id,
+                SalesInvoice.customer_id == customer_id,
+                SalesInvoice.id != exclude_id,
+                SalesInvoice.lines.any(),
+                ~SalesInvoice.lines.any(SalesInvoiceLine.catalog_item_id.is_(None)),
+            )
+            .limit(100)
+        )
+        result = await self.session.execute(statement)
+        return list(result.scalars().unique().all())
+
     async def add_line(
         self,
         invoice: SalesInvoice,

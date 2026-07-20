@@ -45,6 +45,17 @@ class CatalogItemRepository(BaseRepository[CatalogItem]):
             )
         ).scalar_one_or_none()
 
+    async def get_by_ids(self, item_ids: set[uuid.UUID]) -> list[CatalogItem]:
+        """Return available catalog items for a bounded identifier set."""
+        if not item_ids:
+            return []
+        result = await self.session.execute(
+            select(CatalogItem).where(
+                CatalogItem.id.in_(item_ids), CatalogItem.is_deleted.is_(False)
+            )
+        )
+        return list(result.scalars().all())
+
     async def get_by_code(
         self, business_id: uuid.UUID, code: str
     ) -> CatalogItem | None:

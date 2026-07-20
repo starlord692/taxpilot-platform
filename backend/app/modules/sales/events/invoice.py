@@ -66,3 +66,15 @@ class InvoicePaidEvent(Event):
     business_id: uuid.UUID
     event_name: str = "invoice.paid"
     occurred_at: datetime = field(default_factory=utc_now)
+
+
+@dataclass(frozen=True)
+class InvoiceIntelligenceEvaluatedEvent(Event):
+    """Advisory event emitted after a read-only invoice evaluation."""
+
+    invoice_id: uuid.UUID
+    business_id: uuid.UUID
+    recommendation_count: int
+    readiness: str
+    event_name: str = "invoice.intelligence_evaluated"
+    occurred_at: datetime = field(default_factory=utc_now)

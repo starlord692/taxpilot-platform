@@ -3,6 +3,7 @@
 from app.modules.sales.events.invoice import (
     InvoiceCancelledEvent,
     InvoiceCreatedEvent,
+    InvoiceIntelligenceEvaluatedEvent,
     InvoiceIssuedEvent,
     InvoicePaidEvent,
     InvoicePartiallyPaidEvent,
@@ -18,6 +19,7 @@ __all__ = [
     "InvoiceCancelledEvent",
     "InvoiceCreatedEvent",
     "InvoiceIssuedEvent",
+    "InvoiceIntelligenceEvaluatedEvent",
     "InvoicePaidEvent",
     "InvoicePartiallyPaidEvent",
     "InvoiceUpdatedEvent",

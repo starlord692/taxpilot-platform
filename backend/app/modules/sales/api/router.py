@@ -12,6 +12,7 @@ from app.modules.business.exceptions import BusinessNotMemberException
 from app.modules.identity.dependencies import CurrentUser
 from app.modules.sales.api.dependencies import (
     get_canonical_sales_invoice_service,
+    get_sales_intelligence_service,
     get_sales_invoice_service,
     get_sales_unit_of_work,
 )
@@ -25,6 +26,10 @@ from app.modules.sales.exceptions import (
     SalesCustomerNotFoundException,
     SalesDuplicateCustomerException,
     SalesInvoiceNotFoundException,
+)
+from app.modules.sales.intelligence import (
+    InvoiceIntelligenceResponse,
+    SalesIntelligenceService,
 )
 from app.modules.sales.models import Customer, SalesInvoice
 from app.modules.sales.schemas import (
@@ -49,6 +54,9 @@ SalesUnitOfWorkDependency = Annotated[
 ]
 CanonicalSalesServiceDependency = Annotated[
     CanonicalSalesInvoiceService, Depends(get_canonical_sales_invoice_service)
+]
+SalesIntelligenceServiceDependency = Annotated[
+    SalesIntelligenceService, Depends(get_sales_intelligence_service)
 ]
 
 
@@ -114,6 +122,26 @@ async def get_canonical_invoice(
         success=True,
         message="Canonical invoice returned",
         data=await service.get(invoice_id),
+    )
+
+
+@router.get(
+    "/workflow/invoices/{invoice_id}/recommendations",
+    response_model=SuccessResponse[InvoiceIntelligenceResponse],
+)
+async def get_invoice_recommendations(
+    invoice_id: uuid.UUID,
+    current_user: CurrentUser,
+    uow: SalesUnitOfWorkDependency,
+    service: SalesIntelligenceServiceDependency,
+) -> SuccessResponse[InvoiceIntelligenceResponse]:
+    """Return advisory intelligence without modifying the invoice."""
+    async with uow:
+        await _get_invoice_for_user(uow, invoice_id, current_user.id)
+    return SuccessResponse(
+        success=True,
+        message="Invoice recommendations returned",
+        data=await service.evaluate(invoice_id),
     )
 
 
