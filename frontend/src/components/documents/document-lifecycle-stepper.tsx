@@ -1,0 +1,7 @@
+import { Check, Circle, CircleAlert, LoaderCircle } from "lucide-react";
+import { cn } from "@/lib/utils";
+import type { LifecycleStep } from "@/features/documents/utils/document-lifecycle";
+
+export function DocumentLifecycleStepper({ steps }: { steps: LifecycleStep[] }) {
+  return <nav aria-label="Document progress" className="overflow-x-auto rounded-2xl border bg-card p-4 shadow-sm"><ol className="flex min-w-[44rem] items-start">{steps.map((step, index) => { const Icon = step.state === "complete" ? Check : step.state === "error" ? CircleAlert : step.state === "current" ? LoaderCircle : Circle; return <li key={step.id} aria-current={step.state === "current" ? "step" : undefined} className="relative flex flex-1 flex-col items-center text-center"><div className={cn("absolute left-0 right-0 top-4 h-px bg-border", index === 0 && "left-1/2", index === steps.length - 1 && "right-1/2")} /><span className={cn("relative z-10 grid size-8 place-items-center rounded-full border bg-background", step.state === "complete" && "border-emerald-500 bg-emerald-500 text-white", step.state === "current" && "border-primary bg-primary text-primary-foreground", step.state === "error" && "border-destructive bg-destructive text-white")}><Icon className={cn("size-4", step.state === "current" && "animate-pulse")} aria-hidden="true" /></span><span className="mt-2 text-xs font-medium">{step.label}</span><span className="mt-1 max-w-28 text-[10px] leading-4 text-muted-foreground">{step.description}</span></li>; })}</ol></nav>;
+}
