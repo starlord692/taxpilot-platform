@@ -6,6 +6,10 @@ export type Customer = {
   email: string | null; phone: string | null; gstin: string | null; pan: string | null;
   billing_address: string | null; shipping_address: string | null; is_active: boolean;
 };
+export type CustomerInput = {
+  customer_code: string; name: string; email: string | null; phone: string | null;
+  gstin: string | null; pan: string | null; billing_address: string | null; shipping_address: string | null;
+};
 
 export type InvoiceStatus = "draft" | "issued" | "partially_paid" | "paid" | "cancelled";
 export type InvoiceSummary = {
