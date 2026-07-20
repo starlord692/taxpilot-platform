@@ -1,0 +1,4 @@
+import { describe, expect, it } from "vitest";
+import { invoiceDraftSchema } from "./invoice-schema";
+const valid={customer_id:"11111111-1111-4111-8111-111111111111",invoice_date:"2026-07-20",due_date:"",notes:"",round_off:0,lines:[{catalog_item_id:"22222222-2222-4222-8222-222222222222",quantity:1,unit_price:100,discount:0}]};
+describe("invoiceDraftSchema",()=>{it("accepts canonical catalog lines without totals or invoice number",()=>{expect(invoiceDraftSchema.safeParse(valid).success).toBe(true)});it("requires a customer and line",()=>{expect(invoiceDraftSchema.safeParse({...valid,customer_id:"",lines:[]}).success).toBe(false)});it("rejects invalid quantities without calculating totals",()=>{expect(invoiceDraftSchema.safeParse({...valid,lines:[{...valid.lines[0],quantity:0}]}).success).toBe(false)})});
