@@ -9,6 +9,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.common.filters import FilterParams
 from app.common.pagination import Page, PaginationParams
 from app.common.repositories import BaseRepository
+from app.modules.catalog.models import (
+    CatalogItem,
+    CatalogItemStatus,
+    InventoryItemProfile,
+    ItemType,
+)
 from app.modules.inventory.models import Product
 from app.modules.inventory.schemas import ProductCreate, ProductUpdate
 
@@ -28,7 +34,9 @@ class ProductRepository(BaseRepository[Product]):
     ) -> Product:
         """Create a product from request data and persistence identifiers."""
         product = Product(**request.model_dump(), business_id=business_id)
-        return await self.add(product)
+        product = await self.add(product)
+        await self._mirror_new_product(product)
+        return product
 
     async def update(self, product: Product, request: ProductUpdate) -> Product:
         """Update mutable product fields from request data."""
@@ -36,7 +44,67 @@ class ProductRepository(BaseRepository[Product]):
             setattr(product, field_name, value)
         self.session.add(product)
         await self.session.flush()
+        await self._mirror_product_update(product)
         return product
+
+    async def _mirror_new_product(self, product: Product) -> None:
+        """Create canonical records with the same stable product UUID."""
+        existing = await self.session.get(CatalogItem, product.id)
+        if existing is not None:
+            return
+        self.session.add(
+            CatalogItem(
+                id=product.id,
+                business_id=product.business_id,
+                code=product.sku,
+                name=product.name,
+                description=product.description,
+                item_type=ItemType.PRODUCT,
+                status=CatalogItemStatus.ACTIVE
+                if product.is_active
+                else CatalogItemStatus.ARCHIVED,
+                category=product.category,
+                purchase_price=product.purchase_price,
+                selling_price=product.selling_price,
+                default_unit=product.unit_of_measure,
+                barcode=product.barcode,
+            )
+        )
+        self.session.add(
+            InventoryItemProfile(
+                id=product.id,
+                catalog_item_id=product.id,
+                legacy_product_id=product.id,
+                stock_tracking=True,
+                reorder_level=product.reorder_level,
+            )
+        )
+
+    async def _mirror_product_update(self, product: Product) -> None:
+        """Keep the legacy inventory projection synchronized transactionally."""
+        item = await self.session.get(CatalogItem, product.id)
+        if item is None:
+            await self._mirror_new_product(product)
+            return
+        item.code, item.name, item.description = (
+            product.sku,
+            product.name,
+            product.description,
+        )
+        item.category, item.purchase_price, item.selling_price = (
+            product.category,
+            product.purchase_price,
+            product.selling_price,
+        )
+        item.default_unit, item.barcode = product.unit_of_measure, product.barcode
+        item.status = (
+            CatalogItemStatus.ACTIVE
+            if product.is_active
+            else CatalogItemStatus.ARCHIVED
+        )
+        profile = await self.session.get(InventoryItemProfile, product.id)
+        if profile is not None:
+            profile.reorder_level = product.reorder_level
 
     async def delete(self, product: Product) -> None:
         """Soft-delete a product."""

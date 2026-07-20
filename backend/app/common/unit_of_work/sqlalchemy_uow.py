@@ -21,6 +21,10 @@ from app.modules.business.repository import (
     BusinessMembershipRepository,
     BusinessRepository,
 )
+from app.modules.catalog.repository import (
+    CatalogItemRepository,
+    InventoryItemProfileRepository,
+)
 from app.modules.documents.automation.repository import AutomationRunRepository
 from app.modules.documents.extraction.repository import (
     ExtractedDocumentRepository,
@@ -85,7 +89,7 @@ SessionFactory = Callable[[], AsyncSession]
 class SQLAlchemyUnitOfWork(UnitOfWork):
     """Coordinate repositories inside a single SQLAlchemy transaction."""
 
-    def __init__(self, session_factory: SessionFactory) -> None:
+    def __init__(self, session_factory: SessionFactory) -> None:  # noqa: PLR0915
         """Initialize with a dependency-injected async session factory."""
         self._session_factory = session_factory
         self._session: AsyncSession | None = None
@@ -123,6 +127,8 @@ class SQLAlchemyUnitOfWork(UnitOfWork):
         self.purchase_invoices: PurchaseInvoiceRepository
         self.purchase_invoice_lines: PurchaseInvoiceLineRepository
         self.products: ProductRepository
+        self.catalog_items: CatalogItemRepository
+        self.inventory_item_profiles: InventoryItemProfileRepository
         self.warehouses: WarehouseRepository
         self.stock_balances: StockBalanceRepository
         self.stock_movements: StockMovementRepository
@@ -162,9 +168,7 @@ class SQLAlchemyUnitOfWork(UnitOfWork):
         self.ledgers = LedgerRepository(self._session)
         self.account_balances = AccountBalanceRepository(self._session)
         self.trial_balances = TrialBalanceRepository(self.account_balances)
-        self.financial_statements = FinancialStatementRepository(
-            self.trial_balances
-        )
+        self.financial_statements = FinancialStatementRepository(self.trial_balances)
         self.customers = CustomerRepository(self._session)
         self.sales_invoices = SalesInvoiceRepository(self._session)
         self.payments = PaymentRepository(self._session)
@@ -175,6 +179,8 @@ class SQLAlchemyUnitOfWork(UnitOfWork):
         self.purchase_invoices = PurchaseInvoiceRepository(self._session)
         self.purchase_invoice_lines = PurchaseInvoiceLineRepository(self._session)
         self.products = ProductRepository(self._session)
+        self.catalog_items = CatalogItemRepository(self._session)
+        self.inventory_item_profiles = InventoryItemProfileRepository(self._session)
         self.warehouses = WarehouseRepository(self._session)
         self.stock_balances = StockBalanceRepository(self._session)
         self.stock_movements = StockMovementRepository(self._session)
