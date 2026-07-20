@@ -1,0 +1,7 @@
+import { AlertCircle, LoaderCircle, PackageOpen } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { EntityEmptyState } from "@/components/entities/entity-workspace";
+
+export function CatalogLoading({ label = "Loading catalog" }: { label?: string }) { return <div role="status" className="flex min-h-48 items-center justify-center gap-2 rounded-xl border"><LoaderCircle className="size-5 animate-spin"/><span className="text-sm text-muted-foreground">{label}…</span></div>; }
+export function CatalogError({ retry }: { retry: () => void }) { return <section role="alert" className="rounded-xl border border-destructive/30 p-6 text-center"><AlertCircle className="mx-auto size-6 text-destructive"/><h2 className="mt-2 font-semibold">Catalog unavailable</h2><p className="mt-1 text-sm text-muted-foreground">The catalog could not be loaded. Your data has not been changed.</p><Button variant="outline" className="mt-4" onClick={retry}>Try again</Button></section>; }
+export function CatalogEmpty({ filtered = false }: { filtered?: boolean }) { return <EntityEmptyState icon={PackageOpen} title={filtered ? "No matching items" : "Your catalog is empty"} description={filtered ? "No catalog items match the selected backend-supported filters." : "Create a product or service to establish your reusable business catalog."} action={filtered ? undefined : { href: "/catalog/new", label: "Create first item" }}/>; }

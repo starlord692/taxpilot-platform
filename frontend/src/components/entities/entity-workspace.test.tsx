@@ -1,0 +1,6 @@
+import { render, screen } from "@testing-library/react";
+import { PackageOpen } from "lucide-react";
+import { describe, expect, it } from "vitest";
+import { EntityEmptyState, EntityStatusBadge, EntityWorkspaceHeader } from "./entity-workspace";
+
+describe("Business Entity Framework",()=>{it("renders a reusable workspace heading and action",()=>{render(<EntityWorkspaceHeader eyebrow="Catalog" title="Products & services" description="Shared records" action={{href:"/catalog/new",label:"New item",icon:PackageOpen}}/>);expect(screen.getByRole("heading",{name:"Products & services"})).toBeInTheDocument();expect(screen.getByRole("link",{name:/New item/})).toHaveAttribute("href","/catalog/new")});it("communicates lifecycle status as text",()=>{const{rerender}=render(<EntityStatusBadge active/>);expect(screen.getByText("Active")).toBeInTheDocument();rerender(<EntityStatusBadge active={false}/>);expect(screen.getByText("Archived")).toBeInTheDocument()});it("offers a creation path from an empty state",()=>{render(<EntityEmptyState icon={PackageOpen} title="No items" description="Create one" action={{href:"/catalog/new",label:"Create item"}}/>);expect(screen.getByRole("heading",{name:"No items"})).toBeInTheDocument();expect(screen.getByRole("link",{name:"Create item"})).toHaveAttribute("href","/catalog/new")})});
