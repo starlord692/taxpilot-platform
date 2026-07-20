@@ -17,6 +17,10 @@ from app.modules.sales.canonical_service import (
     CanonicalSalesInvoiceService,
     CanonicalSalesUnitOfWork,
 )
+from app.modules.sales.intelligence import (
+    IntelligenceUnitOfWork,
+    SalesIntelligenceService,
+)
 from app.modules.sales.services import PaymentService, SalesInvoiceService
 from app.modules.sales.services.invoice_service import SalesInvoiceUnitOfWork
 from app.modules.sales.services.payment_service import PaymentUnitOfWork
@@ -108,6 +112,19 @@ def get_canonical_sales_invoice_service() -> CanonicalSalesInvoiceService:
         lambda: SQLAlchemyUnitOfWork(session_factory),
     )
     return CanonicalSalesInvoiceService(
+        unit_of_work_factory,
+        get_event_dispatcher(),
+    )
+
+
+def get_sales_intelligence_service() -> SalesIntelligenceService:
+    """Provide read-only deterministic Sales intelligence."""
+    session_factory = get_session_factory()
+    unit_of_work_factory = cast(
+        Callable[[], IntelligenceUnitOfWork],
+        lambda: SQLAlchemyUnitOfWork(session_factory),
+    )
+    return SalesIntelligenceService(
         unit_of_work_factory,
         get_event_dispatcher(),
     )
