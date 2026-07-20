@@ -2,7 +2,7 @@
 
 import uuid
 from collections.abc import Callable
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 
 from app.common.events import EventDispatcher
 from app.modules.catalog.models import CatalogItem, CatalogItemStatus
@@ -15,7 +15,6 @@ from app.modules.sales.canonical_schemas import (
 from app.modules.sales.domain import (
     InvoiceLifecycle,
     InvoiceLineValue,
-    InvoiceTotalsCalculator,
 )
 from app.modules.sales.events import (
     InvoiceCancelledEvent,
@@ -27,6 +26,11 @@ from app.modules.sales.exceptions import (
     SalesCustomerNotFoundException,
     SalesInvoiceNotFoundException,
     SalesInvoiceValidationException,
+)
+from app.modules.sales.financial_rules import (
+    CreditValidationHook,
+    SalesFinancialRulesEngine,
+    StoredFinancialInvoice,
 )
 from app.modules.sales.invoice_numbering import (
     InvoiceNumberService,
@@ -48,6 +52,10 @@ class CatalogReader(Protocol):
     async def get_by_id(self, item_id: uuid.UUID) -> CatalogItem | None: ...
 
 
+class BusinessReader(Protocol):
+    async def get_settings(self, business_id: uuid.UUID) -> object | None: ...
+
+
 class InvoiceRepository(Protocol):
     async def create(self, request: InvoiceCreateRequest) -> SalesInvoice: ...
     async def get_by_id(self, invoice_id: uuid.UUID) -> SalesInvoice | None: ...
@@ -64,6 +72,7 @@ class InvoiceRepository(Protocol):
 
 
 class CanonicalSalesUnitOfWork(Protocol):
+    businesses: BusinessReader
     customers: CustomerReader
     catalog_items: CatalogReader
     sales_invoices: InvoiceRepository
@@ -104,12 +113,15 @@ class CanonicalSalesInvoiceService:
         *,
         number_service: InvoiceNumberService | None = None,
         hooks: tuple[SalesWorkflowHook, ...] = (),
+        financial_rules: SalesFinancialRulesEngine | None = None,
+        credit_hooks: tuple[CreditValidationHook, ...] = (),
     ) -> None:
         self._uow_factory = unit_of_work_factory
         self._events = event_dispatcher
         self._numbers = number_service or InvoiceNumberService()
         self._hooks = hooks
-        self._totals = InvoiceTotalsCalculator()
+        self._financial = financial_rules or SalesFinancialRulesEngine()
+        self._credit_hooks = credit_hooks
         self._lifecycle = InvoiceLifecycle()
 
     async def create_draft(
@@ -124,10 +136,26 @@ class CanonicalSalesInvoiceService:
                 raise SalesInvoiceValidationException(
                     "Customer does not belong to invoice business"
                 )
-            lines = await self._prepare_lines(uow, request.business_id, request.lines)
-            totals = self._totals.calculate(
-                [value for _, value in lines], request.round_off
+            settings = await uow.businesses.get_settings(request.business_id)
+            configured_currency = getattr(settings, "currency", "INR")
+            currency = self._financial.validate_currency(
+                request.currency, configured_currency
             )
+            lines = await self._prepare_lines(uow, request.business_id, request.lines)
+            totals = self._financial.calculate([value for _, value in lines])
+            due_date = request.due_date
+            if request.payment_terms_days is not None:
+                due_date = self._financial.due_date(
+                    request.invoice_date, request.payment_terms_days
+                )
+            self._financial.validate_due_date(request.invoice_date, due_date)
+            for hook in self._credit_hooks:
+                await hook.validate(
+                    business_id=request.business_id,
+                    customer_id=request.customer_id,
+                    grand_total=totals.grand_total,
+                    currency=currency,
+                )
             number = await self._numbers.next_number(
                 uow.invoice_number_sequences,
                 business_id=request.business_id,
@@ -141,7 +169,7 @@ class CanonicalSalesInvoiceService:
                     customer_id=request.customer_id,
                     invoice_number=number,
                     invoice_date=request.invoice_date,
-                    due_date=request.due_date,
+                    due_date=due_date,
                     status=InvoiceStatus.DRAFT,
                     subtotal=totals.subtotal,
                     discount_amount=totals.discount_amount,
@@ -153,6 +181,8 @@ class CanonicalSalesInvoiceService:
                 )
             )
             invoice.round_off = totals.round_off
+            invoice.currency = currency
+            invoice.payment_terms_days = request.payment_terms_days
             await uow.commit()
         await self._events.dispatch(
             InvoiceCreatedEvent(invoice.id, invoice.business_id)
@@ -169,6 +199,20 @@ class CanonicalSalesInvoiceService:
                 raise SalesInvoiceValidationException(
                     "Canonical invoice lines must reference catalog items"
                 )
+            settings = await uow.businesses.get_settings(invoice.business_id)
+            invoice.currency = self._financial.validate_currency(
+                invoice.currency, getattr(settings, "currency", "INR")
+            )
+            for line in invoice.lines:
+                if (
+                    line.tax_rate > 0
+                    and line.cgst_amount + line.sgst_amount + line.igst_amount == 0
+                ):
+                    components = self._financial.legacy_tax_components(line)
+                    line.cgst_amount = components.cgst_amount
+                    line.sgst_amount = components.sgst_amount
+                    line.igst_amount = components.igst_amount
+            self._financial.reconcile(cast(StoredFinancialInvoice, invoice))
             for hook in self._hooks:
                 await hook.before_transition(invoice, InvoiceStatus.ISSUED)
             invoice = await uow.sales_invoices.mark_status(
@@ -202,10 +246,6 @@ class CanonicalSalesInvoiceService:
                 if "due_date" in request.model_fields_set
                 else invoice.due_date
             )
-            if candidate_due is not None and candidate_due < candidate_date:
-                raise SalesInvoiceValidationException(
-                    "Due date cannot precede invoice date"
-                )
             update: dict[str, object] = {}
             for field in ("invoice_date", "due_date", "notes"):
                 if field in request.model_fields_set:
@@ -214,19 +254,13 @@ class CanonicalSalesInvoiceService:
                 lines = await self._prepare_lines(
                     uow, invoice.business_id, request.lines
                 )
-                round_off = (
-                    request.round_off
-                    if request.round_off is not None
-                    else invoice.round_off
-                )
-                totals = self._totals.calculate(
-                    [value for _, value in lines], round_off
-                )
+                totals = self._financial.calculate([value for _, value in lines])
                 update.update(
                     subtotal=totals.subtotal,
                     discount_amount=totals.discount_amount,
                     taxable_amount=totals.taxable_amount,
                     tax_amount=totals.tax.tax_amount + totals.tax.cess_amount,
+                    round_off=totals.round_off,
                     total_amount=totals.grand_total,
                 )
                 for old_line in list(invoice.lines):
@@ -236,8 +270,18 @@ class CanonicalSalesInvoiceService:
                     invoice.lines.append(
                         await uow.sales_invoices.add_line(invoice, line)
                     )
-            if request.round_off is not None:
-                update["round_off"] = request.round_off
+            settings = await uow.businesses.get_settings(invoice.business_id)
+            if request.currency is not None:
+                invoice.currency = self._financial.validate_currency(
+                    request.currency, getattr(settings, "currency", "INR")
+                )
+            if request.payment_terms_days is not None:
+                candidate_due = self._financial.due_date(
+                    candidate_date, request.payment_terms_days
+                )
+                update["due_date"] = candidate_due
+                invoice.payment_terms_days = request.payment_terms_days
+            self._financial.validate_due_date(candidate_date, candidate_due)
             invoice = await uow.sales_invoices.update(
                 invoice, InvoiceUpdateRequest(**update)
             )
@@ -286,7 +330,7 @@ class CanonicalSalesInvoiceService:
                 item.gst_rate,
                 item.cess_rate,
             )
-            line_totals = self._totals.calculate([value])
+            breakdown = self._financial.calculate_line(value)
             prepared.append(
                 (
                     InvoiceLineRequest(
@@ -296,8 +340,11 @@ class CanonicalSalesInvoiceService:
                         unit_price=line.unit_price,
                         discount=line.discount,
                         tax_rate=item.gst_rate,
-                        cess_amount=line_totals.tax.cess_amount,
-                        line_total=line_totals.grand_total,
+                        cgst_amount=breakdown.cgst_amount,
+                        sgst_amount=breakdown.sgst_amount,
+                        igst_amount=breakdown.igst_amount,
+                        cess_amount=breakdown.cess_amount,
+                        line_total=breakdown.line_total,
                     ),
                     value,
                 )

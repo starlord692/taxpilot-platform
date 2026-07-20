@@ -17,13 +17,13 @@ from app.modules.sales.canonical_service import CanonicalSalesInvoiceService
 from app.modules.sales.domain import (
     InvoiceLifecycle,
     InvoiceLineValue,
-    InvoiceTotalsCalculator,
 )
 from app.modules.sales.events import InvoiceCreatedEvent, InvoiceIssuedEvent
 from app.modules.sales.exceptions import (
     SalesInvalidInvoiceStatusException,
     SalesInvoiceValidationException,
 )
+from app.modules.sales.financial_rules import SalesFinancialRulesEngine
 from app.modules.sales.invoice_numbering import InvoiceNumberService
 from app.modules.sales.models import (
     InvoiceNumberSequence,
@@ -50,6 +50,14 @@ class Events:
         self.events.append(event)
 
 
+class CreditHook:
+    def __init__(self) -> None:
+        self.calls: list[tuple[Decimal, str]] = []
+
+    async def validate(self, **values) -> None:
+        self.calls.append((values["grand_total"], values["currency"]))
+
+
 class Customers:
     def __init__(self, customer) -> None:
         self.customer = customer
@@ -64,6 +72,11 @@ class Catalog:
 
     async def get_by_id(self, item_id: uuid.UUID):
         return self.item if item_id == self.item.id else None
+
+
+class Businesses:
+    async def get_settings(self, business_id: uuid.UUID):
+        return SimpleNamespace(currency="INR")
 
 
 class Invoices:
@@ -81,7 +94,6 @@ class Invoices:
             **request.model_dump(exclude={"lines"}),
             lines=lines,
             payments=[],
-            round_off=Decimal("0"),
         )
         return self.invoice
 
@@ -96,6 +108,7 @@ class Invoices:
 class Uow:
     def __init__(self, customer, item) -> None:
         self.customers = Customers(customer)
+        self.businesses = Businesses()
         self.catalog_items = Catalog(item)
         self.sales_invoices = Invoices()
         self.invoice_number_sequences = Sequence()
@@ -112,19 +125,19 @@ class Uow:
 
 
 def test_totals_are_server_authoritative() -> None:
-    totals = InvoiceTotalsCalculator().calculate(
+    totals = SalesFinancialRulesEngine().calculate(
         [
             InvoiceLineValue(
                 Decimal("2"), Decimal("100"), Decimal("10"), Decimal("18"), Decimal("1")
             )
         ],
-        Decimal("0.10"),
     )
     assert totals.subtotal == Decimal("200.00")
     assert totals.discount_amount == Decimal("10.00")
     assert totals.tax.tax_amount == Decimal("34.20")
     assert totals.tax.cess_amount == Decimal("1.90")
-    assert totals.grand_total == Decimal("226.20")
+    assert totals.round_off == Decimal("0.00")
+    assert totals.grand_total == Decimal("226.10")
 
 
 @pytest.mark.parametrize(
@@ -132,14 +145,14 @@ def test_totals_are_server_authoritative() -> None:
 )
 def test_invalid_line_values_are_rejected(quantity: Decimal, price: Decimal) -> None:
     with pytest.raises(SalesInvoiceValidationException):
-        InvoiceTotalsCalculator().calculate(
+        SalesFinancialRulesEngine().calculate(
             [InvoiceLineValue(quantity, price, Decimal("0"), Decimal("0"))]
         )
 
 
 def test_discount_cannot_exceed_gross() -> None:
     with pytest.raises(SalesInvoiceValidationException):
-        InvoiceTotalsCalculator().calculate(
+        SalesFinancialRulesEngine().calculate(
             [InvoiceLineValue(Decimal("1"), Decimal("10"), Decimal("11"), Decimal("0"))]
         )
 
@@ -197,13 +210,15 @@ async def test_canonical_create_and_issue_use_catalog_without_side_effects() -> 
         gst_rate=18,
         cess_rate=0,
     )
-    uow, events = Uow(customer, item), Events()
-    service = CanonicalSalesInvoiceService(lambda: uow, events)
+    uow, events, credit = Uow(customer, item), Events(), CreditHook()
+    service = CanonicalSalesInvoiceService(lambda: uow, events, credit_hooks=(credit,))
     response = await service.create_draft(
         CanonicalInvoiceDraftRequest(
             business_id=business_id,
             customer_id=customer_id,
             invoice_date=date(2026, 7, 20),
+            currency="INR",
+            payment_terms_days=30,
             lines=[
                 CanonicalInvoiceLineRequest(
                     catalog_item_id=item_id, quantity=2, unit_price=100
@@ -213,8 +228,11 @@ async def test_canonical_create_and_issue_use_catalog_without_side_effects() -> 
     )
     assert response.invoice_number == "INV/2026-27/00001"
     assert response.total_amount == Decimal("236.00")
+    assert response.currency == "INR"
+    assert response.due_date == date(2026, 8, 19)
     assert response.lines[0].catalog_item_id == item_id
     assert isinstance(events.events[0], InvoiceCreatedEvent)
+    assert credit.calls == [(Decimal("236.00"), "INR")]
     issued = await service.issue(response.id)
     assert issued.status == InvoiceStatus.ISSUED
     assert isinstance(events.events[1], InvoiceIssuedEvent)

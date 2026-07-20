@@ -93,6 +93,8 @@ class SalesInvoice(BaseEntity):
     round_off: Mapped[Decimal] = mapped_column(
         Numeric(18, 2), default=Decimal("0.00"), nullable=False
     )
+    currency: Mapped[str | None] = mapped_column(String(3), nullable=True)
+    payment_terms_days: Mapped[int | None] = mapped_column(nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     business: Mapped[Business] = relationship()
