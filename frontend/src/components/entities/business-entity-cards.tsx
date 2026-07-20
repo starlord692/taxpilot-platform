@@ -1,0 +1,5 @@
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+
+export type EntityField = [label: string, value: string | null | undefined];
+export function BusinessEntityInformationCard({ title, description, fields }: { title: string; description: string; fields: EntityField[] }) { return <Card><CardHeader><CardTitle>{title}</CardTitle><CardDescription>{description}</CardDescription></CardHeader><CardContent><dl className="space-y-4">{fields.map(([label, value]) => <div key={label}><dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</dt><dd className="mt-1 whitespace-pre-wrap text-sm">{value || "Unavailable"}</dd></div>)}</dl></CardContent></Card>; }
+export function BusinessEntityUnavailableCard({ title, description }: { title: string; description: string }) { return <Card><CardHeader><CardTitle>{title}</CardTitle><CardDescription>Future relationship information</CardDescription></CardHeader><CardContent><p className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">{description}</p></CardContent></Card>; }
