@@ -2,7 +2,7 @@
 import { keepPreviousData, useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { salesApi } from "../api/sales-api";
 import { salesKeys } from "../api/sales-query-keys";
-import type { CustomerInput } from "../types/sales.types";
+import type { CanonicalInvoiceDraftInput, CanonicalInvoiceDraftUpdate, CustomerInput } from "../types/sales.types";
 
 export const useCustomers = (businessId: string, page: number, pageSize: number) => useQuery({ queryKey: salesKeys.customers(businessId, page, pageSize), queryFn: () => salesApi.customers(businessId, page, pageSize), enabled: Boolean(businessId), placeholderData: keepPreviousData });
 export const useCustomer = (id: string) => useQuery({ queryKey: salesKeys.customer(id), queryFn: () => salesApi.customer(id), enabled: Boolean(id) });
@@ -21,3 +21,9 @@ export function useCustomerMutations() {
     update: useMutation({ mutationFn: ({ id, input }: { id: string; input: Partial<CustomerInput> & { is_active?: boolean } }) => salesApi.updateCustomer(id, input), onSuccess: refresh }),
   };
 }
+export function useInvoiceMutations() { const client=useQueryClient(); const refresh=()=>client.invalidateQueries({queryKey:salesKeys.all}); return {
+  create:useMutation({mutationFn:(input:CanonicalInvoiceDraftInput)=>salesApi.createInvoice(input),onSuccess:refresh}),
+  update:useMutation({mutationFn:({id,input}:{id:string;input:CanonicalInvoiceDraftUpdate})=>salesApi.updateInvoice(id,input),onSuccess:refresh}),
+  issue:useMutation({mutationFn:(id:string)=>salesApi.issueInvoice(id),onSuccess:refresh}),
+  cancel:useMutation({mutationFn:(id:string)=>salesApi.cancelInvoice(id),onSuccess:refresh}),
+};}

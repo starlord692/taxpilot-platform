@@ -1,0 +1,3 @@
+import { z } from "zod";
+export const invoiceDraftSchema=z.object({customer_id:z.string().uuid("Select a customer"),invoice_date:z.string().min(1,"Invoice date is required"),due_date:z.string(),notes:z.string().max(2000),round_off:z.number(),lines:z.array(z.object({catalog_item_id:z.string().uuid("Select a catalog item"),quantity:z.number().positive("Quantity must be greater than zero"),unit_price:z.number().nonnegative("Price cannot be negative"),discount:z.number().nonnegative("Discount cannot be negative")})).min(1,"Add at least one catalog item")});
+export type InvoiceDraftValues=z.input<typeof invoiceDraftSchema>;

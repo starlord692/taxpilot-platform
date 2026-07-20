@@ -1,5 +1,5 @@
 import { apiClient } from "@/lib/api/client";
-import type { Customer, CustomerInput, Invoice, InvoiceSummary, PaginatedEnvelope, SuccessEnvelope } from "../types/sales.types";
+import type { CanonicalInvoiceDraftInput, CanonicalInvoiceDraftUpdate, Customer, CustomerInput, Invoice, InvoiceSummary, PaginatedEnvelope, SuccessEnvelope } from "../types/sales.types";
 import { isPreviewMode } from "@/lib/env";
 
 export const salesApi = {
@@ -20,11 +20,15 @@ export const salesApi = {
   },
   async invoices(businessId: string, page: number, pageSize: number) {
     if (isPreviewMode) return { success: true, message: "Preview mode", data: [], meta: { page, size: pageSize, total: 0, pages: 0 } } satisfies PaginatedEnvelope<InvoiceSummary>;
-    const response = await apiClient.get<PaginatedEnvelope<InvoiceSummary>>("/sales/invoices", { params: { business_id: businessId, page, page_size: pageSize } });
+    const response = await apiClient.get<PaginatedEnvelope<InvoiceSummary>>("/sales/workflow/invoices", { params: { business_id: businessId, page, page_size: pageSize } });
     return response.data;
   },
   async invoice(invoiceId: string) {
-    const response = await apiClient.get<SuccessEnvelope<Invoice>>(`/sales/invoices/${invoiceId}`);
+    const response = await apiClient.get<SuccessEnvelope<Invoice>>(`/sales/workflow/invoices/${invoiceId}`);
     return response.data.data;
   },
+  async createInvoice(input: CanonicalInvoiceDraftInput) { return (await apiClient.post<SuccessEnvelope<Invoice>>("/sales/workflow/invoices", input)).data.data; },
+  async updateInvoice(id: string, input: CanonicalInvoiceDraftUpdate) { return (await apiClient.patch<SuccessEnvelope<Invoice>>(`/sales/workflow/invoices/${id}`, input)).data.data; },
+  async issueInvoice(id: string) { return (await apiClient.post<SuccessEnvelope<Invoice>>(`/sales/workflow/invoices/${id}/issue`)).data.data; },
+  async cancelInvoice(id: string) { return (await apiClient.post<SuccessEnvelope<Invoice>>(`/sales/workflow/invoices/${id}/cancel`)).data.data; },
 };

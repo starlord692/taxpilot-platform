@@ -17,17 +17,13 @@ export type InvoiceSummary = {
   invoice_date: string; due_date: string | null; status: InvoiceStatus; total_amount: string | number;
 };
 export type InvoiceLine = {
-  id: string; invoice_id: string; description: string; quantity: string | number;
-  unit_price: string | number; discount: string | number; tax_rate: string | number;
-  cgst_amount: string | number; sgst_amount: string | number; igst_amount: string | number;
-  cess_amount: string | number; line_total: string | number;
-};
-export type InvoicePayment = {
-  id: string; invoice_id: string; payment_date: string; amount: string | number;
-  payment_method: "cash" | "bank_transfer" | "upi" | "card" | "cheque" | "other";
-  reference_number: string | null; notes: string | null;
+  id: string; catalog_item_id: string; description: string; quantity: string | number;
+  unit_price: string | number; discount: string | number; tax_rate: string | number; line_total: string | number;
 };
 export type Invoice = InvoiceSummary & {
   subtotal: string | number; discount_amount: string | number; taxable_amount: string | number;
-  tax_amount: string | number; notes: string | null; lines: InvoiceLine[]; payments: InvoicePayment[];
+  tax_amount: string | number; round_off: string | number; notes: string | null; lines: InvoiceLine[];
 };
+export type CanonicalInvoiceLineInput = { catalog_item_id: string; quantity: number; unit_price: number; discount: number };
+export type CanonicalInvoiceDraftInput = { business_id: string; customer_id: string; invoice_date: string; due_date: string | null; notes: string | null; round_off: number; lines: CanonicalInvoiceLineInput[] };
+export type CanonicalInvoiceDraftUpdate = Omit<CanonicalInvoiceDraftInput, "business_id" | "customer_id">;
