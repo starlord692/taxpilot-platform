@@ -1,0 +1,8 @@
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { http, HttpResponse } from "msw";
+import { setupServer } from "msw/node";
+import { catalogApi } from "./catalog-api";
+
+const item={id:"i1",business_id:"b1",code:"P1",name:"Paper",description:null,item_type:"product",status:"active",category:null,purchase_price:"10",selling_price:"12",default_unit:"each",barcode:null,hsn_code:"4802",sac_code:null,gst_rate:"18",cess_rate:"0"};
+const server=setupServer();beforeAll(()=>server.listen({onUnhandledRequest:"error"}));afterEach(()=>server.resetHandlers());afterAll(()=>server.close());
+describe("catalogApi",()=>{it("sends only supported list parameters",async()=>{server.use(http.get("http://localhost:8000/api/v1/catalog/items",({request})=>{const params=new URL(request.url).searchParams;expect([...params.keys()].sort()).toEqual(["business_id","item_type","page","page_size","status"]);return HttpResponse.json({success:true,message:"ok",data:[item],meta:{page:1,size:20,total:1,pages:1}})}));const response=await catalogApi.items("b1",{page:1,pageSize:20,itemType:"product",status:"active"});expect(response.data[0].name).toBe("Paper")});it("uses canonical archive and restore actions without a request model",async()=>{const actions:string[]=[];server.use(http.post("http://localhost:8000/api/v1/catalog/items/i1/:action",async({params,request})=>{actions.push(String(params.action));expect(await request.text()).toBe("");return HttpResponse.json({success:true,message:"ok",data:item})}));await catalogApi.setArchived("b1","i1",true);await catalogApi.setArchived("b1","i1",false);expect(actions).toEqual(["archive","restore"])});});
