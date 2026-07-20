@@ -79,6 +79,7 @@ from app.modules.purchases.repository import (
 )
 from app.modules.sales.repository import (
     CustomerRepository,
+    InvoiceNumberSequenceRepository,
     PaymentRepository,
     SalesInvoiceRepository,
 )
@@ -119,6 +120,7 @@ class SQLAlchemyUnitOfWork(UnitOfWork):
         self.financial_statements: FinancialStatementRepository
         self.customers: CustomerRepository
         self.sales_invoices: SalesInvoiceRepository
+        self.invoice_number_sequences: InvoiceNumberSequenceRepository
         self.payments: PaymentRepository
         self.vendors: VendorRepository
         self.expenses: ExpenseRepository
@@ -142,7 +144,7 @@ class SQLAlchemyUnitOfWork(UnitOfWork):
         self.eway_bills: EWayBillRepository
         self.gst_providers: GSTProviderRepository
 
-    async def __aenter__(self) -> Self:
+    async def __aenter__(self) -> Self:  # noqa: PLR0915
         """Open a session and bind repositories to the transaction scope."""
         self._session = self._session_factory()
         self._committed = False
@@ -171,6 +173,7 @@ class SQLAlchemyUnitOfWork(UnitOfWork):
         self.financial_statements = FinancialStatementRepository(self.trial_balances)
         self.customers = CustomerRepository(self._session)
         self.sales_invoices = SalesInvoiceRepository(self._session)
+        self.invoice_number_sequences = InvoiceNumberSequenceRepository(self._session)
         self.payments = PaymentRepository(self._session)
         self.vendors = VendorRepository(self._session)
         self.expenses = ExpenseRepository(self._session)

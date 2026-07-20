@@ -28,10 +28,7 @@ class SalesInvoiceRepository(BaseRepository[SalesInvoice]):
         invoice_data = request.model_dump(exclude={"lines"})
         invoice = SalesInvoice(
             **invoice_data,
-            lines=[
-                SalesInvoiceLine(**line.model_dump())
-                for line in request.lines
-            ],
+            lines=[SalesInvoiceLine(**line.model_dump()) for line in request.lines],
         )
         return await self.add(invoice)
 
@@ -76,6 +73,19 @@ class SalesInvoiceRepository(BaseRepository[SalesInvoice]):
         """Return paginated invoices for a business."""
         statement = self._base_statement().where(
             SalesInvoice.business_id == business_id
+        )
+        return await self._paginate(statement, pagination)
+
+    async def list_canonical_business_invoices(
+        self,
+        business_id: uuid.UUID,
+        pagination: PaginationParams | None = None,
+    ) -> Page[SalesInvoice]:
+        """Return invoices whose every line has a canonical catalog reference."""
+        statement = self._base_statement().where(
+            SalesInvoice.business_id == business_id,
+            SalesInvoice.lines.any(),
+            ~SalesInvoice.lines.any(SalesInvoiceLine.catalog_item_id.is_(None)),
         )
         return await self._paginate(statement, pagination)
 

@@ -13,6 +13,10 @@ from app.modules.accounting.kernel.accounting_kernel import AccountingKernelUnit
 from app.modules.gst.api.dependencies import get_gst_calculation_service
 from app.modules.inventory.services import StockEngine
 from app.modules.inventory.services.stock_engine import StockEngineUnitOfWork
+from app.modules.sales.canonical_service import (
+    CanonicalSalesInvoiceService,
+    CanonicalSalesUnitOfWork,
+)
 from app.modules.sales.services import PaymentService, SalesInvoiceService
 from app.modules.sales.services.invoice_service import SalesInvoiceUnitOfWork
 from app.modules.sales.services.payment_service import PaymentUnitOfWork
@@ -93,4 +97,17 @@ def get_payment_service() -> PaymentService:
         unit_of_work_factory=unit_of_work_factory,
         event_dispatcher=get_event_dispatcher(),
         accounting_kernel=get_accounting_kernel_service(),
+    )
+
+
+def get_canonical_sales_invoice_service() -> CanonicalSalesInvoiceService:
+    """Provide the side-effect-free canonical Sales workflow."""
+    session_factory = get_session_factory()
+    unit_of_work_factory = cast(
+        Callable[[], CanonicalSalesUnitOfWork],
+        lambda: SQLAlchemyUnitOfWork(session_factory),
+    )
+    return CanonicalSalesInvoiceService(
+        unit_of_work_factory,
+        get_event_dispatcher(),
     )
