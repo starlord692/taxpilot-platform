@@ -25,6 +25,8 @@ class CanonicalInvoiceDraftRequest(BaseModel):
     due_date: date | None = None
     notes: str | None = None
     round_off: Decimal = Decimal("0")
+    currency: str | None = Field(default=None, min_length=3, max_length=3)
+    payment_terms_days: int | None = None
     lines: list[CanonicalInvoiceLineRequest] = Field(min_length=1)
 
     @model_validator(mode="after")
@@ -40,6 +42,8 @@ class CanonicalInvoiceDraftUpdate(BaseModel):
     due_date: date | None = None
     notes: str | None = None
     round_off: Decimal | None = None
+    currency: str | None = Field(default=None, min_length=3, max_length=3)
+    payment_terms_days: int | None = None
     lines: list[CanonicalInvoiceLineRequest] | None = Field(default=None, min_length=1)
 
     @model_validator(mode="after")
@@ -83,6 +87,8 @@ class CanonicalInvoiceResponse(BaseModel):
     taxable_amount: Decimal
     tax_amount: Decimal
     round_off: Decimal
+    currency: str | None
+    payment_terms_days: int | None
     total_amount: Decimal
     notes: str | None
     lines: list[CanonicalInvoiceLineResponse]
