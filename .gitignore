@@ -6,6 +6,18 @@
 *.tar.gz
 *.tgz
 
+# Frontend dependencies and build outputs
+node_modules/
+.next/
+out/
+.vercel/
+*.tsbuildinfo
+
+# Local generated storage
+storage/
+backend/storage/
+frontend/coverage/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
