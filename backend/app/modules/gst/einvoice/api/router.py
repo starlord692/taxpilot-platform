@@ -7,6 +7,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, Query, status
 
 from app.core.responses import ErrorResponse, SuccessResponse
+from app.modules.business.api.context import ensure_active_business_membership
 from app.modules.business.exceptions import BusinessNotMemberException
 from app.modules.gst.einvoice.api.dependencies import (
     get_einvoice_service,
@@ -52,6 +53,7 @@ async def generate_irn(
 ) -> SuccessResponse[EInvoiceResponse]:
     """Generate IRN."""
     await _ensure_business_member(uow, business_id, current_user.id)
+    await _ensure_invoice_business(uow, request.invoice_id, business_id)
     result = await service.generate_irn(request)
     return SuccessResponse(
         success=True,
@@ -76,6 +78,7 @@ async def cancel_irn(
 ) -> SuccessResponse[EInvoiceResponse]:
     """Cancel IRN."""
     await _ensure_business_member(uow, business_id, current_user.id)
+    await _ensure_invoice_business(uow, request.invoice_id, business_id)
     result = await service.cancel_irn(request)
     return SuccessResponse(
         success=True,
@@ -100,6 +103,7 @@ async def generate_eway_bill(
 ) -> SuccessResponse[EWayBillResponse]:
     """Generate e-way bill."""
     await _ensure_business_member(uow, business_id, current_user.id)
+    await _ensure_invoice_business(uow, request.invoice_id, business_id)
     result = await service.generate_eway_bill(request)
     return SuccessResponse(
         success=True,
@@ -124,6 +128,7 @@ async def cancel_eway_bill(
 ) -> SuccessResponse[EWayBillResponse]:
     """Cancel e-way bill."""
     await _ensure_business_member(uow, business_id, current_user.id)
+    await _ensure_invoice_business(uow, request.invoice_id, business_id)
     result = await service.cancel_eway_bill(request)
     return SuccessResponse(
         success=True,
@@ -148,6 +153,7 @@ async def get_status(
 ) -> SuccessResponse[EInvoiceStatusResponse]:
     """Return e-invoice status."""
     await _ensure_business_member(uow, business_id, current_user.id)
+    await _ensure_invoice_business(uow, invoice_id, business_id)
     result = await service.get_status(invoice_id)
     return SuccessResponse(
         success=True,
@@ -163,11 +169,29 @@ async def _ensure_business_member(
 ) -> None:
     """Raise when current user is not a business member."""
     async with uow:
-        if not await uow.business_memberships.is_member(
+        await ensure_active_business_membership(
+            uow,
             business_id=business_id,
             user_id=user_id,
-        ):
+            entered=True,
+        )
+
+
+async def _ensure_invoice_business(
+    uow: Any,
+    invoice_id: uuid.UUID,
+    business_id: uuid.UUID,
+) -> None:
+    """Raise when an invoice does not belong to the resolved business."""
+    async with uow:
+        invoice = await uow.sales_invoices.get_by_id(invoice_id)
+        if invoice is None:
+            return
+        if invoice.business_id != business_id:
             raise BusinessNotMemberException(
-                "User is not a member of the business",
-                details={"business_id": str(business_id), "user_id": str(user_id)},
+                "Invoice does not belong to the requested business",
+                details={
+                    "invoice_business_id": str(invoice.business_id),
+                    "requested_business_id": str(business_id),
+                },
             )

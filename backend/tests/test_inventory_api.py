@@ -10,6 +10,7 @@ import app.modules.business.models  # noqa: F401
 import app.modules.identity.models  # noqa: F401
 from app.common.pagination import Page, PaginationParams
 from app.main import create_app
+from app.modules.business.models import BusinessMembership
 from app.modules.identity.dependencies.current_user import get_current_user
 from app.modules.identity.models import IdentityUser, UserStatus
 from app.modules.inventory.api.dependencies import (
@@ -32,6 +33,7 @@ from app.modules.inventory.schemas import (
     WarehouseResponse,
     WarehouseUpdate,
 )
+from tests.support.business_context import FakeBusinessRepository
 
 HTTP_CREATED = 201
 HTTP_BAD_REQUEST = 400
@@ -54,6 +56,22 @@ class FakeMembershipRepository:
         _ = business_id
         _ = user_id
         return self.member
+
+    async def get_membership(
+        self,
+        *,
+        business_id: uuid.UUID,
+        user_id: uuid.UUID,
+    ) -> BusinessMembership | None:
+        """Return configured active membership result."""
+        if not self.member:
+            return None
+        return BusinessMembership(
+            id=uuid.uuid4(),
+            business_id=business_id,
+            user_id=user_id,
+            role="member",
+        )
 
 
 class FakeProductRepository:
@@ -97,6 +115,7 @@ class FakeInventoryUnitOfWork:
         """Initialize fake repositories."""
         self.products = FakeProductRepository(product)
         self.warehouses = FakeWarehouseRepository(warehouse)
+        self.businesses = FakeBusinessRepository()
         self.business_memberships = FakeMembershipRepository(is_member=is_member)
 
     async def __aenter__(self) -> "FakeInventoryUnitOfWork":

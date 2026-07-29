@@ -12,6 +12,7 @@ from fastapi.testclient import TestClient
 
 from app.common.events import Event, EventDispatcher
 from app.main import create_app
+from app.modules.business.models import BusinessMembership
 from app.modules.gst.einvoice.api.dependencies import (
     get_einvoice_service,
     get_einvoice_unit_of_work,
@@ -46,6 +47,7 @@ from app.modules.gst.models import GSTRegistration, GSTRegistrationType
 from app.modules.identity.dependencies.current_user import get_current_user
 from app.modules.identity.models import IdentityUser, UserStatus
 from app.modules.sales.models import InvoiceStatus, SalesInvoice, SalesInvoiceLine
+from tests.support.business_context import FakeBusinessRepository
 
 HTTP_OK = 200
 HTTP_CREATED = 201
@@ -87,6 +89,22 @@ class FakeMembershipRepository:
         _ = business_id
         _ = user_id
         return self.is_member_result
+
+    async def get_membership(
+        self,
+        *,
+        business_id: uuid.UUID,
+        user_id: uuid.UUID,
+    ) -> BusinessMembership | None:
+        """Return configured active membership response."""
+        if not self.is_member_result:
+            return None
+        return BusinessMembership(
+            id=uuid.uuid4(),
+            business_id=business_id,
+            user_id=user_id,
+            role="member",
+        )
 
 
 @dataclass
@@ -248,6 +266,7 @@ class FakeEInvoiceUnitOfWork:
         self.eway_bills = FakeEWayBillRepository()
         self.sales_invoices = FakeSalesInvoiceRepository([invoice])
         self.gst_registrations = FakeGSTRegistrationRepository([registration])
+        self.businesses = FakeBusinessRepository()
         self.business_memberships = FakeMembershipRepository(is_member=is_member)
         self.committed = False
         self.rolled_back = False
@@ -509,3 +528,24 @@ def test_einvoice_api_and_business_isolation() -> None:
         )
 
     assert denied_response.status_code == HTTP_FORBIDDEN
+
+
+def test_einvoice_api_rejects_invoice_business_mismatch() -> None:
+    """E-invoice API rejects invoices outside the requested business context."""
+    app = create_app(initialize_resources=False)
+    business_id, invoice, uow, service, _dispatcher = build_service_state()
+    other_business_id = uuid.uuid4()
+    app.dependency_overrides[get_current_user] = build_user
+    app.dependency_overrides[get_einvoice_unit_of_work] = lambda: uow
+    app.dependency_overrides[get_einvoice_service] = lambda: service
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/gst/einvoice/generate",
+            params={"business_id": str(other_business_id)},
+            json={"invoice_id": str(invoice.id)},
+        )
+
+    assert business_id != other_business_id
+    assert response.status_code == HTTP_FORBIDDEN
+    assert response.json()["data"]["code"] == "business.not_member"

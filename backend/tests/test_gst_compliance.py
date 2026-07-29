@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 
 from app.common.events import Event, EventDispatcher
 from app.main import create_app
+from app.modules.business.models import BusinessMembership
 from app.modules.expenses.models import (
     Expense,
     ExpenseCategory,
@@ -40,6 +41,7 @@ from app.modules.sales.models import (
     SalesInvoice,
     SalesInvoiceLine,
 )
+from tests.support.business_context import FakeBusinessRepository
 
 HTTP_OK = 200
 
@@ -70,6 +72,22 @@ class FakeMembershipRepository:
         _ = business_id
         _ = user_id
         return self.is_member_result
+
+    async def get_membership(
+        self,
+        *,
+        business_id: uuid.UUID,
+        user_id: uuid.UUID,
+    ) -> BusinessMembership | None:
+        """Return configured active membership state."""
+        if not self.is_member_result:
+            return None
+        return BusinessMembership(
+            id=uuid.uuid4(),
+            business_id=business_id,
+            user_id=user_id,
+            role="member",
+        )
 
 
 @dataclass
@@ -137,6 +155,7 @@ class FakeComplianceUnitOfWork:
     ) -> None:
         """Initialize fake repositories."""
         self.gst_compliance = repository
+        self.businesses = FakeBusinessRepository()
         self.business_memberships = FakeMembershipRepository(is_member=is_member)
         self.committed = False
 

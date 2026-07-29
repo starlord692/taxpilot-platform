@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 
 from app.common.pagination import Page, PaginationParams
 from app.main import create_app
+from app.modules.business.models import BusinessMembership
 from app.modules.identity.dependencies.current_user import get_current_user
 from app.modules.identity.models import IdentityUser, UserStatus
 from app.modules.sales.api.dependencies import (
@@ -27,6 +28,7 @@ from app.modules.sales.schemas import (
     InvoiceResponse,
     InvoiceUpdateRequest,
 )
+from tests.support.business_context import FakeBusinessRepository
 
 HTTP_CREATED = 201
 HTTP_FORBIDDEN = 403
@@ -48,6 +50,24 @@ class FakeMembershipRepository:
         self.business_id = business_id
         self.user_id = user_id
         return self.member
+
+    async def get_membership(
+        self,
+        *,
+        business_id: uuid.UUID,
+        user_id: uuid.UUID,
+    ) -> BusinessMembership | None:
+        """Return configured active membership result."""
+        self.business_id = business_id
+        self.user_id = user_id
+        if not self.member:
+            return None
+        return BusinessMembership(
+            id=uuid.uuid4(),
+            business_id=business_id,
+            user_id=user_id,
+            role="member",
+        )
 
 
 class FakeCustomerRepository:
@@ -152,6 +172,7 @@ class FakeSalesUnitOfWork:
         """Initialize fake repositories."""
         self.customers = FakeCustomerRepository(customer)
         self.sales_invoices = FakeInvoiceRepository(invoice)
+        self.businesses = FakeBusinessRepository()
         self.business_memberships = FakeMembershipRepository(is_member=is_member)
         self.committed = False
 

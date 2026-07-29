@@ -12,6 +12,7 @@ from app.common.events import Event, EventDispatcher
 from app.common.models.abstract.timestamp import utc_now
 from app.common.pagination import Page, PaginationParams
 from app.main import create_app
+from app.modules.business.models import BusinessMembership
 from app.modules.documents.api.dependencies import (
     get_document_service,
     get_document_unit_of_work,
@@ -41,6 +42,7 @@ from app.modules.documents.services import DocumentService, DocumentUnitOfWork
 from app.modules.documents.services.storage import StorageBackend
 from app.modules.identity.dependencies.current_user import get_current_user
 from app.modules.identity.models import IdentityUser, UserStatus
+from tests.support.business_context import FakeBusinessRepository
 
 HTTP_CREATED = 201
 HTTP_FORBIDDEN = 403
@@ -179,6 +181,22 @@ class FakeMembershipRepository:
         _ = user_id
         return self.is_member_result
 
+    async def get_membership(
+        self,
+        *,
+        business_id: uuid.UUID,
+        user_id: uuid.UUID,
+    ) -> BusinessMembership | None:
+        """Return configured active membership response."""
+        if not self.is_member_result:
+            return None
+        return BusinessMembership(
+            id=uuid.uuid4(),
+            business_id=business_id,
+            user_id=user_id,
+            role="member",
+        )
+
 
 @dataclass
 class FakeDocumentRepository:
@@ -312,6 +330,7 @@ class FakeDocumentUnitOfWork:
         self.documents = FakeDocumentRepository()
         self.document_pages = FakeDocumentPageRepository()
         self.ocr_results = FakeOCRResultRepository()
+        self.businesses = FakeBusinessRepository()
         self.business_memberships = FakeMembershipRepository(is_member=is_member)
         self.committed = False
         self.rolled_back = False

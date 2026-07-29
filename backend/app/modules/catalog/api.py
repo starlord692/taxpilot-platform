@@ -13,7 +13,7 @@ from app.common.pagination import PaginationParams
 from app.common.unit_of_work import SQLAlchemyUnitOfWork
 from app.core.database import database_state, initialize_database
 from app.core.responses import PaginatedApiResponse, SuccessResponse
-from app.modules.business.exceptions import BusinessNotMemberException
+from app.modules.business.api.context import ensure_active_business_membership
 from app.modules.catalog.models import CatalogItemStatus, ItemType
 from app.modules.catalog.schemas import (
     CatalogItemCreate,
@@ -48,13 +48,12 @@ Service = Annotated[CatalogService, Depends(get_catalog_service)]
 
 async def member(business_id: uuid.UUID, user_id: uuid.UUID, service_uow: Any) -> None:
     async with service_uow as uow:
-        if not await uow.business_memberships.is_member(
-            business_id=business_id, user_id=user_id
-        ):
-            raise BusinessNotMemberException(
-                "User is not a business member",
-                details={"business_id": str(business_id)},
-            )
+        await ensure_active_business_membership(
+            uow,
+            business_id=business_id,
+            user_id=user_id,
+            entered=True,
+        )
 
 
 @router.post(

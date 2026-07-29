@@ -9,6 +9,7 @@ from app.core.config import Settings, get_settings
 from app.core.database import dispose_database, initialize_database
 from app.core.exceptions import register_exception_handlers
 from app.core.logging import configure_logging, get_logger
+from app.core.openapi import configure_openapi
 from app.core.responses import ApiResponse
 from app.infrastructure.redis import close_redis, initialize_redis
 from app.modules.business.api import router as business_router
@@ -73,6 +74,7 @@ def create_app(
     )
 
     register_exception_handlers(app)
+    configure_openapi(app)
     app.add_middleware(AuthenticationMiddleware)
     app.include_router(identity_router, prefix=active_settings.api_v1_prefix)
     app.include_router(identity_login_router, prefix=active_settings.api_v1_prefix)

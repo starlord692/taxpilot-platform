@@ -12,6 +12,7 @@ from app.common.events import Event, EventDispatcher
 from app.common.exceptions import TaxPilotException
 from app.common.models.abstract.timestamp import utc_now
 from app.main import create_app
+from app.modules.business.models import BusinessMembership
 from app.modules.documents.automation.api.dependencies import (
     get_automation_unit_of_work,
     get_document_automation_service,
@@ -59,6 +60,7 @@ from app.modules.purchases.models import PurchaseStatus
 from app.modules.purchases.schemas import PurchaseInvoiceResponse
 from app.modules.sales.models import InvoiceStatus
 from app.modules.sales.schemas import InvoiceResponse
+from tests.support.business_context import FakeBusinessRepository
 
 HTTP_FORBIDDEN = 403
 HTTP_OK = 200
@@ -97,6 +99,22 @@ class FakeMembershipRepository:
         _ = business_id
         _ = user_id
         return self.is_member_result
+
+    async def get_membership(
+        self,
+        *,
+        business_id: uuid.UUID,
+        user_id: uuid.UUID,
+    ) -> BusinessMembership | None:
+        """Return configured active membership response."""
+        if not self.is_member_result:
+            return None
+        return BusinessMembership(
+            id=uuid.uuid4(),
+            business_id=business_id,
+            user_id=user_id,
+            role="member",
+        )
 
 
 @dataclass
@@ -216,6 +234,7 @@ class FakeAutomationUnitOfWork:
         """Initialize repositories."""
         self.automation_runs = FakeAutomationRunRepository()
         self.extracted_documents = FakeExtractedDocumentRepository(extracted_document)
+        self.businesses = FakeBusinessRepository()
         self.business_memberships = FakeMembershipRepository(is_member=is_member)
         self.committed = False
         self.rolled_back = False

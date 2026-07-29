@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, Query, Response, status
 
 from app.common.pagination import PaginationParams
 from app.core.responses import ErrorResponse, PaginatedApiResponse, SuccessResponse
-from app.modules.business.exceptions import BusinessNotMemberException
+from app.modules.business.api.context import ensure_active_business_membership
 from app.modules.expenses.api.dependencies import (
     get_expense_unit_of_work,
     get_vendor_service,
@@ -203,14 +203,12 @@ async def _ensure_business_member(
     user_id: uuid.UUID,
 ) -> None:
     """Raise when the current user is not a member of the business."""
-    if not await uow.business_memberships.is_member(
+    await ensure_active_business_membership(
+        uow,
         business_id=business_id,
         user_id=user_id,
-    ):
-        raise BusinessNotMemberException(
-            "User is not a member of the business",
-            details={"business_id": str(business_id), "user_id": str(user_id)},
-        )
+        entered=True,
+    )
 
 
 async def _get_vendor_for_user(

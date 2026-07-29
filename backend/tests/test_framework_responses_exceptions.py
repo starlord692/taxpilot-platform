@@ -3,10 +3,12 @@
 from fastapi.testclient import TestClient
 
 from app.common.exceptions import ValidationException
+from app.core.exceptions import HTTP_ERROR_CODES
 from app.core.responses import ErrorDetail, ErrorResponse, PaginatedApiResponse
 from app.main import create_app
 
 HTTP_BAD_REQUEST = 400
+HTTP_NOT_FOUND = 404
 EXPECTED_RESPONSE_PAGES = 3
 
 
@@ -55,3 +57,60 @@ def test_taxpilot_exception_handler_returns_error_response() -> None:
             "details": {"field": "name"},
         },
     }
+
+
+def test_request_validation_handler_returns_error_response() -> None:
+    """Request validation errors use the standard error envelope."""
+    app = create_app(initialize_resources=False)
+
+    @app.get("/needs-int")
+    async def needs_int(value: int) -> dict[str, int]:
+        return {"value": value}
+
+    with TestClient(app) as client:
+        response = client.get("/needs-int", params={"value": "not-an-int"})
+
+    payload = response.json()
+    assert response.status_code == HTTP_BAD_REQUEST
+    assert payload["success"] is False
+    assert payload["data"]["code"] == "validation.request_invalid"
+    assert payload["data"]["details"]["errors"][0]["loc"] == ["query", "value"]
+
+
+def test_http_exception_handler_returns_error_response() -> None:
+    """Framework HTTP errors use the standard error envelope."""
+    app = create_app(initialize_resources=False)
+
+    with TestClient(app) as client:
+        response = client.get("/missing-route")
+
+    assert response.status_code == HTTP_NOT_FOUND
+    assert response.json() == {
+        "success": False,
+        "message": "Not Found",
+        "data": {
+            "code": "http.not_found",
+            "details": {"status_code": HTTP_NOT_FOUND},
+        },
+    }
+
+
+def test_openapi_documents_runtime_validation_as_bad_request() -> None:
+    """Generated OpenAPI docs match the runtime validation status code."""
+    schema = create_app(initialize_resources=False).openapi()
+    responses = schema["paths"]["/api/v1/identity/register"]["post"]["responses"]
+
+    assert "400" in responses
+    assert "422" not in responses
+    assert responses["400"]["content"]["application/json"]["schema"]["$ref"] == (
+        "#/components/schemas/ErrorResponse"
+    )
+    assert responses["500"]["content"]["application/json"]["schema"]["$ref"] == (
+        "#/components/schemas/ErrorResponse"
+    )
+
+
+def test_http_error_code_map_documents_common_statuses() -> None:
+    """Common framework HTTP statuses map to stable public error codes."""
+    assert HTTP_ERROR_CODES[HTTP_BAD_REQUEST] == "http.bad_request"
+    assert HTTP_ERROR_CODES[HTTP_NOT_FOUND] == "http.not_found"

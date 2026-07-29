@@ -7,7 +7,7 @@ from typing import Annotated, Any, cast
 from fastapi import APIRouter, Depends, Response, status
 
 from app.core.responses import ErrorResponse, SuccessResponse
-from app.modules.business.exceptions import BusinessNotMemberException
+from app.modules.business.api.context import ensure_active_business_membership
 from app.modules.identity.dependencies import CurrentUser
 from app.modules.sales.api.dependencies import (
     get_payment_service,
@@ -180,15 +180,10 @@ async def _get_invoice_for_user(
             "Invoice not found",
             details={"invoice_id": str(invoice_id)},
         )
-    if not await uow.business_memberships.is_member(
+    await ensure_active_business_membership(
+        uow,
         business_id=invoice.business_id,
         user_id=user_id,
-    ):
-        raise BusinessNotMemberException(
-            "User is not a member of the business",
-            details={
-                "business_id": str(invoice.business_id),
-                "user_id": str(user_id),
-            },
-        )
+        entered=True,
+    )
     return cast(SalesInvoice, invoice)

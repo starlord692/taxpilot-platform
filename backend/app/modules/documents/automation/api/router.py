@@ -7,6 +7,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, Header, Query, status
 
 from app.core.responses import ErrorResponse, SuccessResponse
+from app.modules.business.api.context import ensure_active_business_membership
 from app.modules.business.exceptions import BusinessNotMemberException
 from app.modules.documents.automation.api.dependencies import (
     get_automation_unit_of_work,
@@ -116,11 +117,9 @@ async def _ensure_business_member(
 ) -> None:
     """Raise when current user is not a business member."""
     async with uow:
-        if not await uow.business_memberships.is_member(
+        await ensure_active_business_membership(
+            uow,
             business_id=business_id,
             user_id=user_id,
-        ):
-            raise BusinessNotMemberException(
-                "User is not a member of the business",
-                details={"business_id": str(business_id), "user_id": str(user_id)},
-            )
+            entered=True,
+        )

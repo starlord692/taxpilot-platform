@@ -1,5 +1,7 @@
 """Global exception handling for the API."""
 
+from http import HTTPStatus
+
 from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
@@ -7,9 +9,21 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.common.exceptions import TaxPilotException
 from app.core.logging import get_logger
-from app.core.responses import ApiResponse, ErrorDetail, ErrorResponse
+from app.core.responses import ErrorDetail, ErrorResponse
 
 logger = get_logger(__name__)
+
+
+HTTP_ERROR_CODES: dict[int, str] = {
+    HTTPStatus.BAD_REQUEST: "http.bad_request",
+    HTTPStatus.UNAUTHORIZED: "authentication.required",
+    HTTPStatus.FORBIDDEN: "authorization.forbidden",
+    HTTPStatus.NOT_FOUND: "http.not_found",
+    HTTPStatus.METHOD_NOT_ALLOWED: "http.method_not_allowed",
+    HTTPStatus.CONFLICT: "http.conflict",
+    HTTPStatus.UNPROCESSABLE_ENTITY: "validation.request_invalid",
+    HTTPStatus.INTERNAL_SERVER_ERROR: "internal.server_error",
+}
 
 
 def register_exception_handlers(app: FastAPI) -> None:
@@ -31,7 +45,7 @@ def register_exception_handlers(app: FastAPI) -> None:
         )
         return JSONResponse(
             status_code=exc.status_code,
-            content=response.model_dump(),
+            content=response.model_dump(mode="json"),
         )
 
     @app.exception_handler(StarletteHTTPException)
@@ -43,14 +57,17 @@ def register_exception_handlers(app: FastAPI) -> None:
             "http_exception",
             extra={"path": request.url.path, "status_code": exc.status_code},
         )
-        response = ApiResponse[dict[str, object] | None](
+        response = ErrorResponse(
             success=False,
             message=str(exc.detail),
-            data=None,
+            data=ErrorDetail(
+                code=HTTP_ERROR_CODES.get(exc.status_code, "http.error"),
+                details={"status_code": exc.status_code},
+            ),
         )
         return JSONResponse(
             status_code=exc.status_code,
-            content=response.model_dump(),
+            content=response.model_dump(mode="json"),
         )
 
     @app.exception_handler(RequestValidationError)
@@ -59,21 +76,26 @@ def register_exception_handlers(app: FastAPI) -> None:
         exc: RequestValidationError,
     ) -> JSONResponse:
         logger.warning("validation_error", extra={"path": request.url.path})
-        response = ApiResponse[list[dict[str, object]]](
+        response = ErrorResponse(
             success=False,
             message="Request validation failed",
-            data=[
-                {
-                    "loc": error.get("loc", ()),
-                    "msg": error.get("msg", ""),
-                    "type": error.get("type", ""),
-                }
-                for error in exc.errors()
-            ],
+            data=ErrorDetail(
+                code="validation.request_invalid",
+                details={
+                    "errors": [
+                        {
+                            "loc": error.get("loc", ()),
+                            "msg": error.get("msg", ""),
+                            "type": error.get("type", ""),
+                        }
+                        for error in exc.errors()
+                    ],
+                },
+            ),
         )
         return JSONResponse(
             status_code=status.HTTP_400_BAD_REQUEST,
-            content=response.model_dump(),
+            content=response.model_dump(mode="json"),
         )
 
     @app.exception_handler(Exception)
@@ -82,12 +104,12 @@ def register_exception_handlers(app: FastAPI) -> None:
         exc: Exception,
     ) -> JSONResponse:
         logger.exception("unhandled_exception", extra={"path": request.url.path})
-        response = ApiResponse[None](
+        response = ErrorResponse(
             success=False,
             message="Internal server error",
-            data=None,
+            data=ErrorDetail(code="internal.server_error"),
         )
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            content=response.model_dump(),
+            content=response.model_dump(mode="json"),
         )

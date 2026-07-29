@@ -12,6 +12,7 @@ from pydantic import ValidationError
 from app.common.events import Event, EventDispatcher
 from app.common.pagination import Page, PaginationParams
 from app.main import create_app
+from app.modules.business.models import BusinessMembership
 from app.modules.gst.api.dependencies import (
     get_gst_registration_service,
     get_gst_unit_of_work,
@@ -30,6 +31,7 @@ from app.modules.gst.services import GSTRegistrationService
 from app.modules.gst.services.registration_service import GSTRegistrationUnitOfWork
 from app.modules.identity.dependencies.current_user import get_current_user
 from app.modules.identity.models import IdentityUser, UserStatus
+from tests.support.business_context import FakeBusinessRepository
 
 HTTP_CREATED = 201
 HTTP_OK = 200
@@ -58,6 +60,20 @@ class FakeMembershipRepository:
         _ = business_id
         _ = user_id
         return True
+
+    async def get_membership(
+        self,
+        *,
+        business_id: uuid.UUID,
+        user_id: uuid.UUID,
+    ) -> BusinessMembership:
+        """Return active membership."""
+        return BusinessMembership(
+            id=uuid.uuid4(),
+            business_id=business_id,
+            user_id=user_id,
+            role="member",
+        )
 
 
 class FakeGSTRegistrationRepository:
@@ -144,6 +160,7 @@ class FakeGSTUnitOfWork:
     def __init__(self, repository: FakeGSTRegistrationRepository) -> None:
         """Initialize fake Unit of Work."""
         self.gst_registrations = repository
+        self.businesses = FakeBusinessRepository()
         self.business_memberships = FakeMembershipRepository()
         self.committed = False
 
