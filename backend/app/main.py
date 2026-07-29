@@ -12,6 +12,7 @@ from app.core.logging import configure_logging, get_logger
 from app.core.openapi import configure_openapi
 from app.core.responses import ApiResponse
 from app.infrastructure.redis import close_redis, initialize_redis
+from app.modules.assistant.api import router as assistant_router
 from app.modules.business.api import router as business_router
 from app.modules.catalog.api import router as catalog_router
 from app.modules.documents.api import router as documents_router
@@ -79,6 +80,7 @@ def create_app(
     app.include_router(identity_router, prefix=active_settings.api_v1_prefix)
     app.include_router(identity_login_router, prefix=active_settings.api_v1_prefix)
     app.include_router(identity_session_router, prefix=active_settings.api_v1_prefix)
+    app.include_router(assistant_router, prefix=active_settings.api_v1_prefix)
     app.include_router(business_router, prefix=active_settings.api_v1_prefix)
     app.include_router(catalog_router, prefix=active_settings.api_v1_prefix)
     app.include_router(documents_router, prefix=active_settings.api_v1_prefix)

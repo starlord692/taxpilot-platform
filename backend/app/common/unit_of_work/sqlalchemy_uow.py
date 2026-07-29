@@ -17,6 +17,7 @@ from app.modules.accounting.financial_statements.repository import (
 from app.modules.accounting.journal.repository import JournalRepository
 from app.modules.accounting.ledger.repository import LedgerRepository
 from app.modules.accounting.trial_balance.repository import TrialBalanceRepository
+from app.modules.assistant.repository import AssistantConversationRepository
 from app.modules.business.repository import (
     BusinessMembershipRepository,
     BusinessRepository,
@@ -143,6 +144,7 @@ class SQLAlchemyUnitOfWork(UnitOfWork):
         self.einvoices: EInvoiceRepository
         self.eway_bills: EWayBillRepository
         self.gst_providers: GSTProviderRepository
+        self.assistant_conversations: AssistantConversationRepository
 
     async def __aenter__(self) -> Self:  # noqa: PLR0915
         """Open a session and bind repositories to the transaction scope."""
@@ -196,6 +198,7 @@ class SQLAlchemyUnitOfWork(UnitOfWork):
         self.einvoices = EInvoiceRepository(self._session)
         self.eway_bills = EWayBillRepository(self._session)
         self.gst_providers = GSTProviderRepository(self._session)
+        self.assistant_conversations = AssistantConversationRepository(self._session)
         return self
 
     async def __aexit__(
