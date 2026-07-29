@@ -4,6 +4,8 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: taxpilot-backend
+    env_file:
+      - .env
     environment:
       DATABASE_URL: postgresql+asyncpg://taxpilot:taxpilot@postgres:5432/taxpilot
       REDIS_URL: redis://redis:6379/0

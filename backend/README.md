@@ -24,6 +24,32 @@ Install dependencies:
 uv sync
 ```
 
+## Configuration
+
+Local development works with the defaults in `.env.example` after PostgreSQL and
+Redis are available.
+
+Production deployments must set:
+
+- `ENVIRONMENT=production`
+- `DATABASE_URL` with non-default production credentials
+- `REDIS_URL` with production credentials
+- `IDENTITY_TOKEN_SECRET_KEY` to a unique secure value of at least 32 characters
+
+Production startup fails fast when unsafe defaults are used, including the
+development database URL, the development Redis URL, placeholder token secrets,
+or `DEBUG=true`.
+
+Document and OCR configuration:
+
+- `DOCUMENT_STORAGE_PATH`
+- `DOCUMENT_MAX_UPLOAD_SIZE_BYTES`
+- `OCR_PROVIDER` (`tesseract` or `easyocr`)
+- `OCR_LANGUAGES`
+- `TESSERACT_PATH`
+- `MAX_OCR_PAGES`
+- `OCR_TIMEOUT`
+
 ## Run Locally
 
 Start PostgreSQL and Redis, then run:
