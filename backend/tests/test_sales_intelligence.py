@@ -1,18 +1,25 @@
 """Deterministic Sales intelligence and recommendation tests."""
 
 import uuid
+from collections.abc import Callable, Sequence
 from copy import deepcopy
 from datetime import date
 from decimal import Decimal
 from types import SimpleNamespace
+from typing import cast
 
 import pytest
 
+from app.common.events import Event, EventDispatcher
 from app.main import create_app
 from app.modules.sales.events import InvoiceIntelligenceEvaluatedEvent
 from app.modules.sales.intelligence import (
     AutomationReadiness,
+    IntelligenceCatalogItem,
     IntelligenceEngine,
+    IntelligenceInvoice,
+    IntelligenceUnitOfWork,
+    InvoiceIntelligenceResponse,
     RecommendationCategory,
     RecommendationSeverity,
     SalesIntelligenceService,
@@ -97,7 +104,7 @@ def invoice(
     )
 
 
-def categories(result) -> list[RecommendationCategory]:
+def categories(result: InvoiceIntelligenceResponse) -> list[RecommendationCategory]:
     return [item.category for item in result.recommendations]
 
 
@@ -233,21 +240,31 @@ async def test_service_reads_context_and_publishes_advisory_event() -> None:
     item = catalog_item(item_id)
 
     class Invoices:
-        async def get_by_id(self, invoice_id: uuid.UUID):
+        async def get_by_id(
+            self, invoice_id: uuid.UUID
+        ) -> IntelligenceInvoice | None:
             return current if invoice_id == current.id else None
 
-        async def list_intelligence_history(self, **kwargs):
+        async def list_intelligence_history(
+            self,
+            *,
+            business_id: uuid.UUID,
+            customer_id: uuid.UUID,
+            exclude_id: uuid.UUID,
+        ) -> Sequence[IntelligenceInvoice]:
             return []
 
     class Catalog:
-        async def get_by_ids(self, item_ids: set[uuid.UUID]):
+        async def get_by_ids(
+            self, item_ids: set[uuid.UUID]
+        ) -> Sequence[IntelligenceCatalogItem]:
             return [item] if item.id in item_ids else []
 
     class Businesses:
-        async def get_settings(self, business_id: uuid.UUID):
+        async def get_settings(self, business_id: uuid.UUID) -> object | None:
             return SimpleNamespace(currency="INR")
 
-        async def get_tax_profile(self, business_id: uuid.UUID):
+        async def get_tax_profile(self, business_id: uuid.UUID) -> object | None:
             return SimpleNamespace(gst_registered=True)
 
     class Uow:
@@ -255,21 +272,31 @@ async def test_service_reads_context_and_publishes_advisory_event() -> None:
         catalog_items = Catalog()
         businesses = Businesses()
 
-        async def __aenter__(self):
+        async def __aenter__(self) -> "Uow":
             return self
 
-        async def __aexit__(self, exc_type, exc, traceback):
+        async def __aexit__(
+            self,
+            exc_type: type[BaseException] | None,
+            exc: BaseException | None,
+            traceback: object | None,
+        ) -> None:
             return None
 
-    class Events:
+    class Events(EventDispatcher):
         def __init__(self) -> None:
-            self.events: list[object] = []
+            super().__init__()
+            self.events: list[Event] = []
 
-        async def dispatch(self, event: object) -> None:
+        async def dispatch(self, event: Event) -> None:
             self.events.append(event)
 
     events = Events()
-    service = SalesIntelligenceService(Uow, events)
+    service = SalesIntelligenceService(
+        # The nested fake implements the read-only IntelligenceUnitOfWork protocol.
+        cast(Callable[[], IntelligenceUnitOfWork], Uow),
+        events,
+    )
     result = await service.evaluate(current.id)
     assert result.invoice_id == current.id
     assert len(events.events) == 1

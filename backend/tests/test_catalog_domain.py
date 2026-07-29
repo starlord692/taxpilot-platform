@@ -1,9 +1,10 @@
 """Catalog domain, schema, service, and compatibility tests."""
 
 import uuid
+from collections.abc import Callable
 from decimal import Decimal
 from pathlib import Path
-from typing import Self
+from typing import Self, cast
 
 import pytest
 from pydantic import ValidationError
@@ -20,7 +21,7 @@ from app.modules.catalog.models import (
     ItemType,
 )
 from app.modules.catalog.schemas import CatalogItemCreate, CatalogItemUpdate
-from app.modules.catalog.service import CatalogService
+from app.modules.catalog.service import CatalogService, CatalogUnitOfWork
 
 
 def request(item_type: ItemType = ItemType.PRODUCT) -> CatalogItemCreate:
@@ -72,7 +73,7 @@ class FakeCatalogRepository:
 
     async def create(
         self,
-        value: CatalogItemCreate,
+        request: CatalogItemCreate,
         *,
         business_id: uuid.UUID,
         item_id: uuid.UUID | None = None,
@@ -81,7 +82,7 @@ class FakeCatalogRepository:
             id=item_id or uuid.uuid4(),
             business_id=business_id,
             status=CatalogItemStatus.ACTIVE,
-            **value.model_dump(),
+            **request.model_dump(),
         )
         self.items.append(item)
         return item
@@ -101,8 +102,10 @@ class FakeCatalogRepository:
             None,
         )
 
-    async def update(self, item: CatalogItem, value: CatalogItemUpdate) -> CatalogItem:
-        for name, field_value in value.model_dump(exclude_unset=True).items():
+    async def update(
+        self, item: CatalogItem, request: CatalogItemUpdate
+    ) -> CatalogItem:
+        for name, field_value in request.model_dump(exclude_unset=True).items():
             setattr(item, name, field_value)
         return item
 
@@ -142,7 +145,11 @@ async def test_catalog_service_creates_services_and_publishes_event() -> None:
     repository = FakeCatalogRepository()
     uow = FakeUnitOfWork(repository)
     dispatcher = CapturingDispatcher()
-    service = CatalogService(lambda: uow, dispatcher)
+    service = CatalogService(
+        # The fake UoW provides the CatalogUnitOfWork protocol used by the service.
+        cast(Callable[[], CatalogUnitOfWork], lambda: uow),
+        dispatcher,
+    )
     business_id = uuid.uuid4()
 
     created = await service.create(request(ItemType.SERVICE), business_id)
@@ -153,10 +160,14 @@ async def test_catalog_service_creates_services_and_publishes_event() -> None:
     assert dispatcher.events[0].catalog_item_id == created.id
 
 
-def test_migration_preserves_legacy_product_identifiers() -> None:
-    migration = Path("alembic/versions/20260720_0015a_catalog_domain.py").read_text()
-    assert "SELECT id,business_id,sku" in migration
-    assert "SELECT id,id,id,TRUE,reorder_level" in migration
+def test_rc1_baseline_preserves_legacy_product_identifier_mapping() -> None:
+    migration = Path("alembic/versions/20260726_0001_rc1_baseline.py").read_text()
+    assert "legacy_product_id UUID" in migration
+    assert "UNIQUE (legacy_product_id)" in migration
+    assert (
+        "FOREIGN KEY(legacy_product_id) "
+        "REFERENCES inventory_products (id) ON DELETE SET NULL"
+    ) in migration
     assert CatalogItem.__tablename__ == "catalog_items"
     assert InventoryItemProfile.__tablename__ == "inventory_item_profiles"
 

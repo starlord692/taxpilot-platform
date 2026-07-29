@@ -1,19 +1,26 @@
 """Canonical Sales domain and application workflow tests."""
 
 import uuid
+from collections.abc import Callable
 from datetime import date
 from decimal import Decimal
 from types import SimpleNamespace
+from typing import Any, cast
 
 import pytest
+from sqlalchemy import Table
 
+from app.common.events import Event, EventDispatcher
 from app.main import create_app
 from app.modules.catalog.models import CatalogItemStatus, ItemType
 from app.modules.sales.canonical_schemas import (
     CanonicalInvoiceDraftRequest,
     CanonicalInvoiceLineRequest,
 )
-from app.modules.sales.canonical_service import CanonicalSalesInvoiceService
+from app.modules.sales.canonical_service import (
+    CanonicalSalesInvoiceService,
+    CanonicalSalesUnitOfWork,
+)
 from app.modules.sales.domain import (
     InvoiceLifecycle,
     InvoiceLineValue,
@@ -42,11 +49,12 @@ class Sequence:
         return self.value
 
 
-class Events:
+class Events(EventDispatcher):
     def __init__(self) -> None:
-        self.events = []
+        super().__init__()
+        self.events: list[Event] = []
 
-    async def dispatch(self, event) -> None:
+    async def dispatch(self, event: Event) -> None:
         self.events.append(event)
 
 
@@ -54,36 +62,36 @@ class CreditHook:
     def __init__(self) -> None:
         self.calls: list[tuple[Decimal, str]] = []
 
-    async def validate(self, **values) -> None:
+    async def validate(self, **values: Any) -> None:
         self.calls.append((values["grand_total"], values["currency"]))
 
 
 class Customers:
-    def __init__(self, customer) -> None:
+    def __init__(self, customer: SimpleNamespace) -> None:
         self.customer = customer
 
-    async def get_by_id(self, customer_id: uuid.UUID):
+    async def get_by_id(self, customer_id: uuid.UUID) -> Any | None:
         return self.customer if customer_id == self.customer.id else None
 
 
 class Catalog:
-    def __init__(self, item) -> None:
+    def __init__(self, item: SimpleNamespace) -> None:
         self.item = item
 
-    async def get_by_id(self, item_id: uuid.UUID):
+    async def get_by_id(self, item_id: uuid.UUID) -> Any | None:
         return self.item if item_id == self.item.id else None
 
 
 class Businesses:
-    async def get_settings(self, business_id: uuid.UUID):
+    async def get_settings(self, business_id: uuid.UUID) -> object | None:
         return SimpleNamespace(currency="INR")
 
 
 class Invoices:
     def __init__(self) -> None:
-        self.invoice = None
+        self.invoice: SimpleNamespace | None = None
 
-    async def create(self, request):
+    async def create(self, request: Any) -> Any:
         invoice_id = uuid.uuid4()
         lines = [
             SimpleNamespace(id=uuid.uuid4(), invoice_id=invoice_id, **line.model_dump())
@@ -97,16 +105,16 @@ class Invoices:
         )
         return self.invoice
 
-    async def get_by_id(self, invoice_id):
+    async def get_by_id(self, invoice_id: uuid.UUID) -> Any | None:
         return self.invoice if self.invoice and self.invoice.id == invoice_id else None
 
-    async def mark_status(self, invoice, status):
+    async def mark_status(self, invoice: Any, status: InvoiceStatus) -> Any:
         invoice.status = status
         return invoice
 
 
 class Uow:
-    def __init__(self, customer, item) -> None:
+    def __init__(self, customer: SimpleNamespace, item: SimpleNamespace) -> None:
         self.customers = Customers(customer)
         self.businesses = Businesses()
         self.catalog_items = Catalog(item)
@@ -114,13 +122,18 @@ class Uow:
         self.invoice_number_sequences = Sequence()
         self.committed = False
 
-    async def __aenter__(self):
+    async def __aenter__(self) -> "Uow":
         return self
 
-    async def __aexit__(self, exc_type, exc, traceback):
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        traceback: object | None,
+    ) -> None:
         return None
 
-    async def commit(self):
+    async def commit(self) -> None:
         self.committed = True
 
 
@@ -211,7 +224,12 @@ async def test_canonical_create_and_issue_use_catalog_without_side_effects() -> 
         cess_rate=0,
     )
     uow, events, credit = Uow(customer, item), Events(), CreditHook()
-    service = CanonicalSalesInvoiceService(lambda: uow, events, credit_hooks=(credit,))
+    service = CanonicalSalesInvoiceService(
+        # The fake UoW implements the canonical workflow protocol used here.
+        cast(Callable[[], CanonicalSalesUnitOfWork], lambda: uow),
+        events,
+        credit_hooks=(credit,),
+    )
     response = await service.create_draft(
         CanonicalInvoiceDraftRequest(
             business_id=business_id,
@@ -263,7 +281,11 @@ async def test_catalog_business_isolation_is_enforced() -> None:
         gst_rate=18,
         cess_rate=0,
     )
-    service = CanonicalSalesInvoiceService(lambda: Uow(customer, item), Events())
+    service = CanonicalSalesInvoiceService(
+        # The fake UoW implements the canonical workflow protocol used here.
+        cast(Callable[[], CanonicalSalesUnitOfWork], lambda: Uow(customer, item)),
+        Events(),
+    )
     with pytest.raises(SalesInvoiceValidationException):
         await service.create_draft(
             CanonicalInvoiceDraftRequest(
@@ -290,7 +312,8 @@ def test_canonical_api_contract_is_documented() -> None:
 
 def test_additive_schema_keeps_legacy_catalog_reference_nullable() -> None:
     assert SalesInvoiceLine.__table__.c.catalog_item_id.nullable is True
+    sequence_table = cast(Table, InvoiceNumberSequence.__table__)
     constraints = {
-        constraint.name for constraint in InvoiceNumberSequence.__table__.constraints
+        constraint.name for constraint in sequence_table.constraints
     }
     assert "uq_sales_invoice_sequence_business_year" in constraints
