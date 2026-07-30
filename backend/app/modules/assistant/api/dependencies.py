@@ -19,6 +19,16 @@ from app.modules.accounting.trial_balance.services import TrialBalanceService
 from app.modules.accounting.trial_balance.services.trial_balance_service import (
     TrialBalanceUnitOfWork,
 )
+from app.modules.assistant.actions.adapters import DomainServiceActionAdapter
+from app.modules.assistant.actions.service import (
+    AssistantActionService,
+    AssistantActionUnitOfWork,
+)
+from app.modules.assistant.actions.tools import (
+    CreateActionDraftTool,
+    ExecuteApprovedActionTool,
+    GetActionPreviewTool,
+)
 from app.modules.assistant.gateway.service import AssistantProviderGateway
 from app.modules.assistant.insights import (
     BusinessInsightService,
@@ -35,12 +45,21 @@ from app.modules.assistant.trust import (
     GetAssistantConversationAuditTool,
 )
 from app.modules.assistant.trust.service import AssistantTrustUnitOfWork
+from app.modules.expenses.api.dependencies import (
+    get_expense_service,
+    get_vendor_service,
+)
 from app.modules.gst.compliance.services import GSTComplianceService
 from app.modules.gst.compliance.services.compliance_service import (
     GSTComplianceUnitOfWork,
 )
 from app.modules.inventory.services import InventoryService
 from app.modules.inventory.services.inventory_service import InventoryUnitOfWork
+from app.modules.purchases.api.dependencies import get_purchase_service
+from app.modules.sales.api.dependencies import (
+    get_payment_service,
+    get_sales_invoice_service,
+)
 
 
 def get_session_factory() -> Callable[[], AsyncSession]:
@@ -130,11 +149,35 @@ def get_assistant_trust_service() -> AssistantTrustService:
     )
 
 
+def get_assistant_action_service() -> AssistantActionService:
+    """Provide the assistant guided-action service."""
+    session_factory = get_session_factory()
+    unit_of_work_factory = cast(
+        Callable[[], AssistantActionUnitOfWork],
+        lambda: SQLAlchemyUnitOfWork(session_factory),
+    )
+    return AssistantActionService(
+        unit_of_work_factory=unit_of_work_factory,
+        domain_adapter=DomainServiceActionAdapter(
+            sales_invoice_service=get_sales_invoice_service(),
+            purchase_service=get_purchase_service(),
+            expense_service=get_expense_service(),
+            vendor_service=get_vendor_service(),
+            payment_service=get_payment_service(),
+        ),
+        event_dispatcher=get_event_dispatcher(),
+    )
+
+
 def get_tool_registry() -> AssistantToolRegistry:
     """Provide the assistant tool registry."""
     trust_service = get_assistant_trust_service()
+    action_service = get_assistant_action_service()
     registry = AssistantToolRegistry()
     registry.register(GetBusinessContextTool())
+    registry.register(CreateActionDraftTool(action_service))
+    registry.register(GetActionPreviewTool(action_service))
+    registry.register(ExecuteApprovedActionTool(action_service))
     registry.register(GenerateBusinessInsightsTool(get_business_insight_service()))
     registry.register(ExplainAssistantRunTool(trust_service))
     registry.register(GetAssistantConversationAuditTool(trust_service))

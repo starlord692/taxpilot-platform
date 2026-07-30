@@ -22,6 +22,7 @@ MODEL_MODULES: tuple[str, ...] = (
     "app.modules.documents.review.models",
     "app.modules.documents.automation.models",
     "app.modules.assistant.models",
+    "app.modules.assistant.actions.models",
 )
 
 

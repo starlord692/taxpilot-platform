@@ -1,7 +1,7 @@
-﻿"""Add assistant business memory and context intelligence tables.
+"""Add assistant business memory and context intelligence tables.
 
-Revision ID: 20260729_0002_ai_002_business_memory_context
-Revises: 20260729_0001_ai_001_assistant_core
+Revision ID: 20260729_0002_ai002
+Revises: 20260729_0001_ai001
 
 """
 
@@ -13,8 +13,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision: str = "20260729_0002_ai_002_business_memory_context"
-down_revision: str | None = "20260729_0001_ai_001_assistant_core"
+revision: str = "20260729_0002_ai002"
+down_revision: str | None = "20260729_0001_ai001"
 branch_labels: Sequence[str] | None = None
 depends_on: Sequence[str] | None = None
 
@@ -40,7 +40,7 @@ def upgrade() -> None:
         sa.Column("business_id", sa.UUID(), nullable=False),
         sa.Column("user_id", sa.UUID(), nullable=False),
         sa.Column("context_version", sa.String(length=40), nullable=False),
-        sa.Column("context_type", context_type, nullable=False),
+        sa.Column("context_type", postgresql.ENUM(name="assistant_context_type", create_type=False), nullable=False),
         sa.Column("payload", sa.JSON(), nullable=False),
         sa.Column("provenance", sa.JSON(), nullable=False),
         sa.Column("generated_at", sa.DateTime(timezone=True), nullable=False),
@@ -70,10 +70,10 @@ def upgrade() -> None:
         sa.Column("entity_type", sa.String(length=80), nullable=False),
         sa.Column("entity_id", sa.UUID(), nullable=True),
         sa.Column("entity_label", sa.String(length=255), nullable=False),
-        sa.Column("source", context_source, nullable=False),
-        sa.Column("confidence", entity_confidence, nullable=False),
+        sa.Column("source", postgresql.ENUM(name="assistant_context_source", create_type=False), nullable=False),
+        sa.Column("confidence", postgresql.ENUM(name="assistant_entity_resolution_confidence", create_type=False), nullable=False),
         sa.Column("confidence_score", sa.Numeric(precision=5, scale=4), nullable=False),
-        sa.Column("status", entity_reference_status, nullable=False),
+        sa.Column("status", postgresql.ENUM(name="assistant_entity_reference_status", create_type=False), nullable=False),
         sa.Column("provenance", sa.JSON(), nullable=False),
         sa.Column("last_seen_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("expires_at", sa.DateTime(timezone=True), nullable=False),
@@ -100,8 +100,8 @@ def upgrade() -> None:
         sa.Column("conversation_id", sa.UUID(), nullable=False),
         sa.Column("business_id", sa.UUID(), nullable=False),
         sa.Column("user_id", sa.UUID(), nullable=False),
-        sa.Column("workflow_type", workflow_type, nullable=False),
-        sa.Column("status", workflow_status, nullable=False),
+        sa.Column("workflow_type", postgresql.ENUM(name="assistant_workflow_type", create_type=False), nullable=False),
+        sa.Column("status", postgresql.ENUM(name="assistant_workflow_status", create_type=False), nullable=False),
         sa.Column("current_step", sa.String(length=120), nullable=False),
         sa.Column("active_entity_refs", sa.JSON(), nullable=False),
         sa.Column("pending_decisions", sa.JSON(), nullable=False),
@@ -157,3 +157,5 @@ def downgrade() -> None:
     op.execute("DROP TYPE IF EXISTS assistant_entity_reference_status")
     op.execute("DROP TYPE IF EXISTS assistant_context_source")
     op.execute("DROP TYPE IF EXISTS assistant_context_type")
+
+

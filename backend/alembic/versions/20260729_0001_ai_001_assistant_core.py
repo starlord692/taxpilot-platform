@@ -1,6 +1,6 @@
-﻿"""Add assistant core orchestration tables.
+"""Add assistant core orchestration tables.
 
-Revision ID: 20260729_0001_ai_001_assistant_core
+Revision ID: 20260729_0001_ai001
 Revises: 20260726_0001_rc1_baseline
 
 """
@@ -13,7 +13,7 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision: str = "20260729_0001_ai_001_assistant_core"
+revision: str = "20260729_0001_ai001"
 down_revision: str | None = "20260726_0001_rc1_baseline"
 branch_labels: Sequence[str] | None = None
 depends_on: Sequence[str] | None = None
@@ -63,7 +63,7 @@ def upgrade() -> None:
         sa.Column("title", sa.String(length=160), nullable=True),
         sa.Column("language", sa.String(length=16), nullable=False),
         sa.Column("timezone", sa.String(length=80), nullable=False),
-        sa.Column("status", conversation_status, nullable=False),
+        sa.Column("status", postgresql.ENUM(name="assistant_conversation_status", create_type=False), nullable=False),
         sa.Column("summary", sa.Text(), nullable=True),
         sa.Column("id", sa.UUID(), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
@@ -82,7 +82,7 @@ def upgrade() -> None:
     op.create_table(
         "assistant_messages",
         sa.Column("conversation_id", sa.UUID(), nullable=False),
-        sa.Column("role", message_role, nullable=False),
+        sa.Column("role", postgresql.ENUM(name="assistant_message_role", create_type=False), nullable=False),
         sa.Column("content", sa.Text(), nullable=False),
         sa.Column("metadata", sa.JSON(), nullable=False),
         sa.Column("id", sa.UUID(), nullable=False),
@@ -104,7 +104,7 @@ def upgrade() -> None:
         "assistant_runs",
         sa.Column("conversation_id", sa.UUID(), nullable=False),
         sa.Column("user_message_id", sa.UUID(), nullable=True),
-        sa.Column("status", run_status, nullable=False),
+        sa.Column("status", postgresql.ENUM(name="assistant_run_status", create_type=False), nullable=False),
         sa.Column("intent", sa.String(length=120), nullable=True),
         sa.Column("prompt_version", sa.String(length=40), nullable=False),
         sa.Column("provider_name", sa.String(length=80), nullable=False),
@@ -137,9 +137,9 @@ def upgrade() -> None:
         sa.Column("tool_name", sa.String(length=120), nullable=False),
         sa.Column("input_payload", sa.JSON(), nullable=False),
         sa.Column("output_payload", sa.JSON(), nullable=True),
-        sa.Column("status", tool_call_status, nullable=False),
+        sa.Column("status", postgresql.ENUM(name="assistant_tool_call_status", create_type=False), nullable=False),
         sa.Column("required_business_context", sa.Boolean(), nullable=False),
-        sa.Column("side_effect", tool_side_effect, nullable=False),
+        sa.Column("side_effect", postgresql.ENUM(name="assistant_tool_side_effect", create_type=False), nullable=False),
         sa.Column("started_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("completed_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("latency_ms", sa.Integer(), nullable=True),
@@ -183,6 +183,8 @@ def downgrade() -> None:
     op.execute("DROP TYPE IF EXISTS assistant_run_status")
     op.execute("DROP TYPE IF EXISTS assistant_message_role")
     op.execute("DROP TYPE IF EXISTS assistant_conversation_status")
+
+
 
 
 

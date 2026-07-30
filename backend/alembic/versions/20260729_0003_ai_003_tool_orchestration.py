@@ -1,7 +1,7 @@
 """Add assistant intelligent tool orchestration tables.
 
-Revision ID: 20260729_0003_ai_003_tool_orchestration
-Revises: 20260729_0002_ai_002_business_memory_context
+Revision ID: 20260729_0003_ai003
+Revises: 20260729_0002_ai002
 
 """
 
@@ -13,8 +13,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision: str = "20260729_0003_ai_003_tool_orchestration"
-down_revision: str | None = "20260729_0002_ai_002_business_memory_context"
+revision: str = "20260729_0003_ai003"
+down_revision: str | None = "20260729_0002_ai002"
 branch_labels: Sequence[str] | None = None
 depends_on: Sequence[str] | None = None
 
@@ -87,11 +87,11 @@ def upgrade() -> None:
         sa.Column("normalization_version", sa.String(length=60), nullable=False),
         sa.Column("prompt_version", sa.String(length=60), nullable=False),
         sa.Column("context_version", sa.String(length=60), nullable=False),
-        sa.Column("status", plan_status, nullable=False),
-        sa.Column("execution_mode", execution_mode, nullable=False),
-        sa.Column("policy_decision", policy_decision, nullable=False),
-        sa.Column("approval_level", approval_level, nullable=False),
-        sa.Column("approval_status", approval_status, nullable=False),
+        sa.Column("status", postgresql.ENUM(name="assistant_execution_plan_status", create_type=False), nullable=False),
+        sa.Column("execution_mode", postgresql.ENUM(name="assistant_execution_mode", create_type=False), nullable=False),
+        sa.Column("policy_decision", postgresql.ENUM(name="assistant_execution_policy_decision", create_type=False), nullable=False),
+        sa.Column("approval_level", postgresql.ENUM(name="assistant_approval_level", create_type=False), nullable=False),
+        sa.Column("approval_status", postgresql.ENUM(name="assistant_approval_status", create_type=False), nullable=False),
         sa.Column("idempotency_key", sa.String(length=128), nullable=False),
         sa.Column("normalized_plan", sa.JSON(), nullable=False),
         sa.Column("policy_reasons", sa.JSON(), nullable=False),
@@ -129,7 +129,7 @@ def upgrade() -> None:
         sa.Column("tool_manifest_version", sa.String(length=60), nullable=False),
         sa.Column("input_payload", sa.JSON(), nullable=False),
         sa.Column("output_payload", sa.JSON(), nullable=True),
-        sa.Column("status", step_status, nullable=False),
+        sa.Column("status", postgresql.ENUM(name="assistant_execution_step_status", create_type=False), nullable=False),
         sa.Column("required_business_context", sa.Boolean(), nullable=False),
         sa.Column("side_effect", postgresql.ENUM(name="assistant_tool_side_effect", create_type=False), nullable=False),
         sa.Column("idempotency_key", sa.String(length=128), nullable=False),
@@ -165,8 +165,8 @@ def upgrade() -> None:
         sa.Column("business_id", sa.UUID(), nullable=False),
         sa.Column("requested_by", sa.UUID(), nullable=False),
         sa.Column("approved_by", sa.UUID(), nullable=True),
-        sa.Column("approval_level", approval_level, nullable=False),
-        sa.Column("status", approval_status, nullable=False),
+        sa.Column("approval_level", postgresql.ENUM(name="assistant_approval_level", create_type=False), nullable=False),
+        sa.Column("status", postgresql.ENUM(name="assistant_approval_status", create_type=False), nullable=False),
         sa.Column("reason", sa.Text(), nullable=False),
         sa.Column("plan_hash", sa.String(length=128), nullable=False),
         sa.Column("provenance", sa.JSON(), nullable=False),
@@ -213,3 +213,5 @@ def downgrade() -> None:
     op.execute("DROP TYPE IF EXISTS assistant_execution_mode")
     op.execute("DROP TYPE IF EXISTS assistant_execution_step_status")
     op.execute("DROP TYPE IF EXISTS assistant_execution_plan_status")
+
+
