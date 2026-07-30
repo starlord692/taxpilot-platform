@@ -160,6 +160,39 @@ class AssistantConversationRepository(BaseRepository[AssistantConversation]):
         await self.session.flush()
         return run
 
+    async def get_run(
+        self,
+        *,
+        run_id: uuid.UUID,
+        conversation_id: uuid.UUID,
+    ) -> AssistantRun | None:
+        """Return one assistant run scoped to a conversation."""
+        statement = select(AssistantRun).where(
+            AssistantRun.id == run_id,
+            AssistantRun.conversation_id == conversation_id,
+            AssistantRun.is_deleted.is_(False),
+        )
+        result = await self.session.execute(statement)
+        return result.scalar_one_or_none()
+
+    async def list_runs(
+        self,
+        *,
+        conversation_id: uuid.UUID,
+        limit: int = 50,
+    ) -> list[AssistantRun]:
+        """Return assistant runs for a conversation audit."""
+        statement = (
+            select(AssistantRun)
+            .where(
+                AssistantRun.conversation_id == conversation_id,
+                AssistantRun.is_deleted.is_(False),
+            )
+            .order_by(AssistantRun.started_at.asc())
+            .limit(limit)
+        )
+        result = await self.session.execute(statement)
+        return list(result.scalars().all())
     async def complete_run(
         self,
         run: AssistantRun,
@@ -247,6 +280,22 @@ class AssistantConversationRepository(BaseRepository[AssistantConversation]):
         await self.session.flush()
         return tool_call
 
+    async def list_tool_calls_by_run(
+        self,
+        *,
+        run_id: uuid.UUID,
+    ) -> list[AssistantToolCall]:
+        """Return all assistant tool calls for one run."""
+        statement = (
+            select(AssistantToolCall)
+            .where(
+                AssistantToolCall.run_id == run_id,
+                AssistantToolCall.is_deleted.is_(False),
+            )
+            .order_by(AssistantToolCall.started_at.asc())
+        )
+        result = await self.session.execute(statement)
+        return list(result.scalars().all())
     async def list_recent_tool_calls(
         self,
         *,
@@ -295,6 +344,28 @@ class AssistantConversationRepository(BaseRepository[AssistantConversation]):
         await self.session.flush()
         return snapshot
 
+    async def list_context_snapshots(
+        self,
+        *,
+        conversation_id: uuid.UUID,
+        business_id: uuid.UUID,
+        user_id: uuid.UUID,
+        limit: int = 50,
+    ) -> list[AssistantContextSnapshot]:
+        """Return context snapshots scoped to a conversation audit."""
+        statement = (
+            select(AssistantContextSnapshot)
+            .where(
+                AssistantContextSnapshot.conversation_id == conversation_id,
+                AssistantContextSnapshot.business_id == business_id,
+                AssistantContextSnapshot.user_id == user_id,
+                AssistantContextSnapshot.is_deleted.is_(False),
+            )
+            .order_by(AssistantContextSnapshot.generated_at.asc())
+            .limit(limit)
+        )
+        result = await self.session.execute(statement)
+        return list(result.scalars().all())
     async def create_entity_reference(
         self,
         *,
@@ -509,6 +580,52 @@ class AssistantConversationRepository(BaseRepository[AssistantConversation]):
         await self.session.flush()
         return plan
 
+    async def get_execution_plan_by_run(
+        self,
+        *,
+        run_id: uuid.UUID,
+        business_id: uuid.UUID,
+    ) -> AssistantExecutionPlan | None:
+        """Return the execution plan for one run."""
+        statement = (
+            select(AssistantExecutionPlan)
+            .options(
+                selectinload(AssistantExecutionPlan.steps),
+                selectinload(AssistantExecutionPlan.approvals),
+            )
+            .where(
+                AssistantExecutionPlan.run_id == run_id,
+                AssistantExecutionPlan.business_id == business_id,
+                AssistantExecutionPlan.is_deleted.is_(False),
+            )
+        )
+        result = await self.session.execute(statement)
+        return result.scalar_one_or_none()
+
+    async def list_execution_plans_by_conversation(
+        self,
+        *,
+        conversation_id: uuid.UUID,
+        business_id: uuid.UUID,
+        limit: int = 50,
+    ) -> list[AssistantExecutionPlan]:
+        """Return execution plans for a conversation audit."""
+        statement = (
+            select(AssistantExecutionPlan)
+            .options(
+                selectinload(AssistantExecutionPlan.steps),
+                selectinload(AssistantExecutionPlan.approvals),
+            )
+            .where(
+                AssistantExecutionPlan.conversation_id == conversation_id,
+                AssistantExecutionPlan.business_id == business_id,
+                AssistantExecutionPlan.is_deleted.is_(False),
+            )
+            .order_by(AssistantExecutionPlan.started_at.asc())
+            .limit(limit)
+        )
+        result = await self.session.execute(statement)
+        return list(result.scalars().all())
     async def update_execution_plan_status(
         self,
         plan: AssistantExecutionPlan,

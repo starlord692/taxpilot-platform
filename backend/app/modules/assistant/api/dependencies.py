@@ -26,6 +26,12 @@ from app.modules.assistant.providers import AssistantProvider, MockAssistantProv
 from app.modules.assistant.services import AssistantService, PromptBuilder
 from app.modules.assistant.services.assistant_service import AssistantUnitOfWork
 from app.modules.assistant.tools import AssistantToolRegistry, GetBusinessContextTool
+from app.modules.assistant.trust import (
+    AssistantTrustService,
+    ExplainAssistantRunTool,
+    GetAssistantConversationAuditTool,
+)
+from app.modules.assistant.trust.service import AssistantTrustUnitOfWork
 from app.modules.gst.compliance.services import GSTComplianceService
 from app.modules.gst.compliance.services.compliance_service import (
     GSTComplianceUnitOfWork,
@@ -92,11 +98,27 @@ def get_business_insight_service() -> BusinessInsightService:
     )
 
 
+def get_assistant_trust_service() -> AssistantTrustService:
+    """Provide the read-only assistant trust service."""
+    session_factory = get_session_factory()
+    unit_of_work_factory = cast(
+        Callable[[], AssistantTrustUnitOfWork],
+        lambda: SQLAlchemyUnitOfWork(session_factory),
+    )
+    return AssistantTrustService(
+        unit_of_work_factory=unit_of_work_factory,
+        event_dispatcher=get_event_dispatcher(),
+    )
+
+
 def get_tool_registry() -> AssistantToolRegistry:
     """Provide the assistant tool registry."""
+    trust_service = get_assistant_trust_service()
     registry = AssistantToolRegistry()
     registry.register(GetBusinessContextTool())
     registry.register(GenerateBusinessInsightsTool(get_business_insight_service()))
+    registry.register(ExplainAssistantRunTool(trust_service))
+    registry.register(GetAssistantConversationAuditTool(trust_service))
     return registry
 
 

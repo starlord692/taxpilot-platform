@@ -172,3 +172,24 @@ class AssistantInsightFailedEvent(Event):
     business_id: uuid.UUID
     insight_type: str
     error_code: str
+
+@dataclass(frozen=True)
+class AssistantTrustReportGeneratedEvent(Event):
+    """Published after an assistant trust report is generated."""
+
+    event_name = "assistant.trust_report_generated"
+    conversation_id: uuid.UUID
+    run_id: uuid.UUID | None
+    business_id: uuid.UUID
+    trust_score: float
+
+
+@dataclass(frozen=True)
+class AssistantGroundingVerifiedEvent(Event):
+    """Published after assistant grounding is structurally verified."""
+
+    event_name = "assistant.grounding_verified"
+    conversation_id: uuid.UUID
+    run_id: uuid.UUID
+    business_id: uuid.UUID
+    status: str

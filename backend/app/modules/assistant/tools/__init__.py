@@ -1,4 +1,4 @@
-﻿"""Permissioned assistant tools."""
+"""Permissioned assistant tools."""
 
 from app.modules.assistant.tools.base import (
     AssistantTool,
@@ -10,12 +10,18 @@ from app.modules.assistant.tools.base import (
 from app.modules.assistant.tools.business import GetBusinessContextTool
 from app.modules.assistant.tools.executor import AssistantToolExecutor
 from app.modules.assistant.tools.registry import AssistantToolRegistry
+from app.modules.assistant.trust.tools import (
+    ExplainAssistantRunTool,
+    GetAssistantConversationAuditTool,
+)
 
 __all__ = [
     "AssistantTool",
     "AssistantToolExecutor",
     "AssistantToolRegistry",
     "EmptyToolInput",
+    "ExplainAssistantRunTool",
+    "GetAssistantConversationAuditTool",
     "GetBusinessContextTool",
     "ToolContext",
     "ToolDefinition",
