@@ -51,6 +51,8 @@ def test_development_defaults_remain_simple() -> None:
     assert settings.database_url == DEFAULT_DATABASE_URL
     assert settings.redis_url == DEFAULT_REDIS_URL
     assert settings.ocr_provider == "tesseract"
+    assert settings.assistant_provider == "mock"
+    assert settings.assistant_model == "taxpilot-mock-assistant-v1"
     assert settings.log_level == "INFO"
 
 
@@ -181,6 +183,30 @@ def test_ocr_provider_is_validated() -> None:
     assert_settings_error("OCR_PROVIDER must be one of", exc_info)
 
 
+def test_assistant_provider_is_validated() -> None:
+    """Assistant provider typos fail during settings loading."""
+    with pytest.raises(ValidationError) as exc_info:
+        Settings(assistant_provider="unknown")
+
+    assert_settings_error("ASSISTANT_PROVIDER must be one of", exc_info)
+
+
+def test_assistant_model_is_required() -> None:
+    """Assistant model must be configured explicitly."""
+    with pytest.raises(ValidationError) as exc_info:
+        Settings(assistant_model="")
+
+    assert_settings_error("ASSISTANT_MODEL must not be empty", exc_info)
+
+
+def test_assistant_provider_retries_are_bounded() -> None:
+    """Assistant provider retry settings remain bounded."""
+    with pytest.raises(ValidationError) as exc_info:
+        Settings(assistant_provider_max_retries=4)
+
+    assert_settings_error("ASSISTANT_PROVIDER_MAX_RETRIES must not exceed 3", exc_info)
+
+
 def test_log_level_is_validated() -> None:
     """Log level typos fail during settings loading."""
     with pytest.raises(ValidationError) as exc_info:
@@ -223,6 +249,11 @@ def test_env_example_documents_current_settings() -> None:
         "TESSERACT_PATH",
         "MAX_OCR_PAGES",
         "OCR_TIMEOUT",
+        "ASSISTANT_PROVIDER",
+        "ASSISTANT_MODEL",
+        "ASSISTANT_PROVIDER_TIMEOUT_MS",
+        "ASSISTANT_PROVIDER_MAX_RETRIES",
+        "ASSISTANT_PROVIDER_FAILOVER_ENABLED",
         "LOG_LEVEL",
     }
 

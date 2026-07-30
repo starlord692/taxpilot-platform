@@ -24,6 +24,7 @@ from app.modules.assistant.events import (
     AssistantWorkflowTransitionedEvent,
 )
 from app.modules.assistant.exceptions import AssistantConversationNotFoundException
+from app.modules.assistant.gateway.service import AssistantProviderGateway
 from app.modules.assistant.memory import ConversationSummarizer
 from app.modules.assistant.memory.policies import (
     CONTEXT_SNAPSHOT_TTL_HOURS,
@@ -332,7 +333,7 @@ class AssistantService:
         *,
         unit_of_work_factory: AssistantUnitOfWorkFactory,
         event_dispatcher: EventDispatcher,
-        provider: AssistantProvider,
+        provider: AssistantProvider | AssistantProviderGateway,
         tool_registry: AssistantToolRegistry,
         prompt_builder: PromptBuilder,
         context_builder: ConversationContextBuilder | None = None,
@@ -345,8 +346,16 @@ class AssistantService:
         """Initialize with deterministic dependencies."""
         self._unit_of_work_factory = unit_of_work_factory
         self._event_dispatcher = event_dispatcher
-        self._provider = provider
         self._tool_registry = tool_registry
+        self._provider = (
+            provider
+            if isinstance(provider, AssistantProviderGateway)
+            else AssistantProviderGateway(
+                provider=provider,
+                tool_registry=tool_registry,
+                environment="testing",
+            )
+        )
         self._tool_executor = AssistantToolExecutor(tool_registry)
         self._execution_planner = execution_planner or ExecutionPlanner(tool_registry)
         self._execution_engine = execution_engine or AssistantExecutionEngine(
@@ -525,7 +534,13 @@ class AssistantService:
             definition.model_dump()
             for definition in self._tool_registry.definitions()
         ]
+        provider_session = self._provider.create_session_context(
+            prompt_version=self._prompt_builder.prompt_version,
+            conversation_id=conversation.id,
+            run_id=run.id,
+        )
         selected_tools = await self._provider.select_tools(
+            session_context=provider_session,
             messages=prompt_messages,
             tools=[
                 LLMToolDefinition.model_validate(definition.model_dump())
@@ -569,6 +584,7 @@ class AssistantService:
             )
 
         provider_response = await self._provider.complete(
+            session_context=provider_session,
             messages=prompt_messages,
             tool_outputs=tool_outputs,
         )
@@ -789,10 +805,3 @@ class AssistantService:
             LLMMessage(role=message.role.value, content=message.content)
             for message in messages
         ]
-
-
-
-
-
-
-

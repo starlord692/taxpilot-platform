@@ -14,6 +14,7 @@ DEFAULT_DATABASE_URL = (
 )
 DEFAULT_REDIS_URL = "redis://localhost:6379/0"
 MIN_PRODUCTION_SECRET_LENGTH = 32
+MAX_ASSISTANT_PROVIDER_RETRIES = 3
 
 
 class Settings(BaseSettings):
@@ -35,6 +36,7 @@ class Settings(BaseSettings):
         "DEBUG",
     }
     valid_ocr_providers: ClassVar[set[str]] = {"tesseract", "easyocr"}
+    valid_assistant_providers: ClassVar[set[str]] = {"mock"}
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -69,6 +71,12 @@ class Settings(BaseSettings):
     max_ocr_pages: int = 10
     ocr_timeout: int = 60
 
+    assistant_provider: str = "mock"
+    assistant_model: str = "taxpilot-mock-assistant-v1"
+    assistant_provider_timeout_ms: int = 30_000
+    assistant_provider_max_retries: int = 0
+    assistant_provider_failover_enabled: bool = False
+
     log_level: str = "INFO"
 
     @field_validator("api_v1_prefix")
@@ -84,6 +92,7 @@ class Settings(BaseSettings):
         "document_max_upload_size_bytes",
         "max_ocr_pages",
         "ocr_timeout",
+        "assistant_provider_timeout_ms",
     )
     @classmethod
     def validate_positive_integer(cls, value: int) -> int:
@@ -117,6 +126,34 @@ class Settings(BaseSettings):
         if not any(languages):
             raise ValueError("OCR_LANGUAGES must include at least one language")
         return ",".join(language for language in languages if language)
+
+    @field_validator("assistant_provider")
+    @classmethod
+    def validate_assistant_provider(cls, value: str) -> str:
+        """Normalize and validate the configured assistant provider."""
+        normalized = value.strip().lower()
+        if normalized not in cls.valid_assistant_providers:
+            raise ValueError("ASSISTANT_PROVIDER must be one of: mock")
+        return normalized
+
+    @field_validator("assistant_model")
+    @classmethod
+    def validate_assistant_model(cls, value: str) -> str:
+        """Ensure an assistant model is configured."""
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("ASSISTANT_MODEL must not be empty")
+        return normalized
+
+    @field_validator("assistant_provider_max_retries")
+    @classmethod
+    def validate_assistant_provider_retries(cls, value: int) -> int:
+        """Ensure provider retry limits are bounded and non-negative."""
+        if value < 0:
+            raise ValueError("ASSISTANT_PROVIDER_MAX_RETRIES must be zero or greater")
+        if value > MAX_ASSISTANT_PROVIDER_RETRIES:
+            raise ValueError("ASSISTANT_PROVIDER_MAX_RETRIES must not exceed 3")
+        return value
 
     @field_validator("log_level")
     @classmethod

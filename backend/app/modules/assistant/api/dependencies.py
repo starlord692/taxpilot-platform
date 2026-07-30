@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.common.events import EventDispatcher
 from app.common.unit_of_work import SQLAlchemyUnitOfWork
+from app.core.config import get_settings
 from app.core.database import database_state, initialize_database
 from app.modules.accounting.financial_statements.services import (
     FinancialStatementService,
@@ -18,11 +19,13 @@ from app.modules.accounting.trial_balance.services import TrialBalanceService
 from app.modules.accounting.trial_balance.services.trial_balance_service import (
     TrialBalanceUnitOfWork,
 )
+from app.modules.assistant.gateway.service import AssistantProviderGateway
 from app.modules.assistant.insights import (
     BusinessInsightService,
     GenerateBusinessInsightsTool,
 )
-from app.modules.assistant.providers import AssistantProvider, MockAssistantProvider
+from app.modules.assistant.providers import AssistantProvider
+from app.modules.assistant.providers.factory import AssistantProviderFactory
 from app.modules.assistant.services import AssistantService, PromptBuilder
 from app.modules.assistant.services.assistant_service import AssistantUnitOfWork
 from app.modules.assistant.tools import AssistantToolRegistry, GetBusinessContextTool
@@ -57,8 +60,24 @@ def get_event_dispatcher() -> EventDispatcher:
 
 
 def get_assistant_provider() -> AssistantProvider:
-    """Provide the configured assistant model provider."""
-    return MockAssistantProvider()
+    """Provide the configured assistant model provider adapter."""
+    settings = get_settings()
+    return AssistantProviderFactory().create(
+        provider_name=settings.assistant_provider,
+        model_name=settings.assistant_model,
+    )
+
+
+def get_assistant_provider_gateway(
+    tool_registry: AssistantToolRegistry,
+) -> AssistantProviderGateway:
+    """Provide the governed assistant provider gateway."""
+    settings = get_settings()
+    return AssistantProviderGateway(
+        provider=get_assistant_provider(),
+        tool_registry=tool_registry,
+        environment=settings.environment,
+    )
 
 
 def get_business_insight_service() -> BusinessInsightService:
@@ -129,10 +148,11 @@ def get_assistant_service() -> AssistantService:
         Callable[[], AssistantUnitOfWork],
         lambda: SQLAlchemyUnitOfWork(session_factory),
     )
+    tool_registry = get_tool_registry()
     return AssistantService(
         unit_of_work_factory=unit_of_work_factory,
         event_dispatcher=get_event_dispatcher(),
-        provider=get_assistant_provider(),
-        tool_registry=get_tool_registry(),
+        provider=get_assistant_provider_gateway(tool_registry),
+        tool_registry=tool_registry,
         prompt_builder=PromptBuilder(),
     )
