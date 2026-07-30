@@ -1,4 +1,4 @@
-﻿"""Deterministic mock assistant provider for AI-001."""
+"""Deterministic mock assistant provider for AI-001."""
 
 from app.modules.assistant.providers.interface import AssistantProvider
 from app.modules.assistant.providers.schemas import (
@@ -22,12 +22,17 @@ class MockAssistantProvider(AssistantProvider):
         messages: list[LLMMessage],
         tools: list[LLMToolDefinition],
     ) -> list[LLMToolCall]:
-        """Select the business-context tool for business-specific questions."""
+        """Select read-only tools for business-specific questions."""
         latest = messages[-1].content.lower() if messages else ""
+        has_context_tool = any(tool.name == "business.get_context" for tool in tools)
+        has_insight_tool = any(
+            tool.name == "business.generate_insights" for tool in tools
+        )
+        if self._asks_for_insights(latest) and has_insight_tool:
+            return [LLMToolCall(tool_name="business.generate_insights")]
         asks_for_context = any(
             word in latest for word in ("business", "context", "company")
         )
-        has_context_tool = any(tool.name == "business.get_context" for tool in tools)
         if asks_for_context and has_context_tool:
             return [LLMToolCall(tool_name="business.get_context")]
         return []
@@ -40,8 +45,19 @@ class MockAssistantProvider(AssistantProvider):
     ) -> LLMResponse:
         """Return a deterministic, grounded response from available tool output."""
         latest = messages[-1].content if messages else ""
+        insight_report = self._find_tool_output(
+            tool_outputs,
+            "business.generate_insights",
+        )
         business_context = self._find_tool_output(tool_outputs, "business.get_context")
-        if business_context is not None:
+        if insight_report is not None:
+            summary = str(insight_report.get("summary", "Insights generated."))
+            confidence = str(insight_report.get("confidence", "unknown"))
+            content = (
+                f"{summary} Overall confidence: {confidence}. "
+                "These recommendations are advisory and grounded in tool output."
+            )
+        elif business_context is not None:
             business_name = str(business_context.get("legal_name", "this business"))
             role = str(business_context.get("membership_role", "member"))
             content = (
@@ -64,6 +80,22 @@ class MockAssistantProvider(AssistantProvider):
             ),
         )
 
+    def _asks_for_insights(self, latest: str) -> bool:
+        """Return whether a message asks for business intelligence."""
+        return any(
+            word in latest
+            for word in (
+                "insight",
+                "kpi",
+                "health",
+                "cash flow",
+                "profitability",
+                "revenue",
+                "gst",
+                "inventory",
+            )
+        )
+
     def _find_tool_output(
         self,
         tool_outputs: list[dict[str, object]],
@@ -76,5 +108,3 @@ class MockAssistantProvider(AssistantProvider):
                 if isinstance(result, dict):
                     return result
         return None
-
-

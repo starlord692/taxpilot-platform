@@ -152,3 +152,23 @@ class AssistantExecutionFailedEvent(Event):
     run_id: uuid.UUID
     business_id: uuid.UUID
     error_code: str
+
+
+@dataclass(frozen=True)
+class AssistantInsightGeneratedEvent(Event):
+    """Published after a grounded business insight report is generated."""
+
+    event_name = "assistant.insight_generated"
+    business_id: uuid.UUID
+    insight_type: str
+    confidence: float
+
+
+@dataclass(frozen=True)
+class AssistantInsightFailedEvent(Event):
+    """Published after business insight generation fails."""
+
+    event_name = "assistant.insight_failed"
+    business_id: uuid.UUID
+    insight_type: str
+    error_code: str

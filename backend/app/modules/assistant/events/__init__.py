@@ -9,6 +9,8 @@ from app.modules.assistant.events.assistant import (
     AssistantExecutionFailedEvent,
     AssistantExecutionPlanCreatedEvent,
     AssistantExecutionPolicyEvaluatedEvent,
+    AssistantInsightFailedEvent,
+    AssistantInsightGeneratedEvent,
     AssistantMessageReceivedEvent,
     AssistantResponseGeneratedEvent,
     AssistantRunFailedEvent,
@@ -26,6 +28,8 @@ __all__ = [
     "AssistantExecutionFailedEvent",
     "AssistantExecutionPlanCreatedEvent",
     "AssistantExecutionPolicyEvaluatedEvent",
+    "AssistantInsightFailedEvent",
+    "AssistantInsightGeneratedEvent",
     "AssistantMessageReceivedEvent",
     "AssistantResponseGeneratedEvent",
     "AssistantRunFailedEvent",
@@ -33,4 +37,3 @@ __all__ = [
     "AssistantToolExecutedEvent",
     "AssistantWorkflowTransitionedEvent",
 ]
-
