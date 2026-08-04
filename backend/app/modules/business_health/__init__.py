@@ -1,5 +1,9 @@
-"""Business Health domain models governed by KP-002 and ES-002."""
+﻿"""Business Health domain models governed by KP-002 and ES-002."""
 
+from app.modules.business_health.explanation import (
+    BusinessHealthExplanation,
+    BusinessHealthExplanationEngine,
+)
 from app.modules.business_health.models import (
     BusinessHealthAssessment,
     DeterministicEvidenceReference,
@@ -34,6 +38,8 @@ __all__ = [
     "BusinessHealthAssessment",
     "BusinessHealthAssessmentInput",
     "BusinessHealthAssessmentRepository",
+    "BusinessHealthExplanation",
+    "BusinessHealthExplanationEngine",
     "BusinessHealthInputProvider",
     "BusinessHealthPolicyEngine",
     "BusinessHealthPolicyOutcome",
