@@ -11,15 +11,23 @@ from app.modules.business_health.models import (
     HealthImprovementGuidance,
     HealthState,
 )
+from app.modules.business_health.service import (
+    BusinessHealthAssessmentInput,
+    BusinessHealthService,
+    HealthDimensionInput,
+)
 
 __all__ = [
     "BusinessHealthAssessment",
+    "BusinessHealthAssessmentInput",
+    "BusinessHealthService",
     "DeterministicEvidenceReference",
     "HealthAttention",
     "HealthChange",
     "HealthContributor",
     "HealthDimension",
     "HealthDimensionEvidence",
+    "HealthDimensionInput",
     "HealthImprovementGuidance",
     "HealthState",
 ]
