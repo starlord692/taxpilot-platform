@@ -1,5 +1,11 @@
 """Business DNA capability boundary governed by KP-001 and ES-003."""
 
+from app.modules.business_dna.explanation import (
+    BusinessDNAExplanation,
+    BusinessDNAExplanationEngine,
+    BusinessDNAProfileCoverage,
+    BusinessDNAProfileName,
+)
 from app.modules.business_dna.models import (
     BusinessDNAContext,
     BusinessDNAContextSource,
@@ -26,7 +32,11 @@ __all__ = [
     "BusinessDNAContextInput",
     "BusinessDNAContextRepository",
     "BusinessDNAContextSource",
+    "BusinessDNAExplanation",
+    "BusinessDNAExplanationEngine",
     "BusinessDNAInputProvider",
+    "BusinessDNAProfileCoverage",
+    "BusinessDNAProfileName",
     "BusinessDNAProfileProvenance",
     "BusinessDNAReadProvider",
     "BusinessDNARevisionHistoryRepository",
