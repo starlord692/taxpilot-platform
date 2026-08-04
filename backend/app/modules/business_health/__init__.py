@@ -11,6 +11,14 @@ from app.modules.business_health.models import (
     HealthImprovementGuidance,
     HealthState,
 )
+from app.modules.business_health.ports import (
+    BusinessHealthAssessmentRepository,
+    BusinessHealthInputProvider,
+    BusinessHealthReadProvider,
+    BusinessHealthSourceRepository,
+    BusinessHealthTraceability,
+    BusinessHealthTraceabilityRepository,
+)
 from app.modules.business_health.service import (
     BusinessHealthAssessmentInput,
     BusinessHealthService,
@@ -20,7 +28,13 @@ from app.modules.business_health.service import (
 __all__ = [
     "BusinessHealthAssessment",
     "BusinessHealthAssessmentInput",
+    "BusinessHealthAssessmentRepository",
+    "BusinessHealthInputProvider",
+    "BusinessHealthReadProvider",
     "BusinessHealthService",
+    "BusinessHealthSourceRepository",
+    "BusinessHealthTraceability",
+    "BusinessHealthTraceabilityRepository",
     "DeterministicEvidenceReference",
     "HealthAttention",
     "HealthChange",
