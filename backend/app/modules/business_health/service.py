@@ -19,14 +19,8 @@ from app.modules.business_health.models import (
     HealthImprovementGuidance,
     HealthState,
 )
+from app.modules.business_health.policy import BusinessHealthPolicyEngine
 
-HEALTH_SEVERITY: dict[HealthState, int] = {
-    HealthState.EXCELLENT: 0,
-    HealthState.HEALTHY: 1,
-    HealthState.STABLE: 2,
-    HealthState.WATCH: 3,
-    HealthState.AT_RISK: 4,
-}
 CONCERN_STATES = frozenset({HealthState.WATCH, HealthState.AT_RISK})
 
 
@@ -83,25 +77,26 @@ class BusinessHealthAssessmentInput:
 class BusinessHealthService:
     """Determine deterministic whole-business Health from authoritative inputs."""
 
+    def __init__(
+        self,
+        *,
+        policy_engine: BusinessHealthPolicyEngine | None = None,
+    ) -> None:
+        """Initialize the service with the approved deterministic policy engine."""
+        self._policy_engine = policy_engine or BusinessHealthPolicyEngine()
+
     def assess(
         self,
         assessment_input: BusinessHealthAssessmentInput,
     ) -> BusinessHealthAssessment:
         """Return the authoritative current-condition assessment.
 
-        The service selects the most concerning canonical dimension state. This
-        preserves the whole-business condition without converting it into a score
-        or allowing any one data point to act as an independent Health assessment.
+        Policy evaluation is deterministic and remains independent of repositories,
+        infrastructure, AI, and source-domain retrieval.
         """
-        state = max(
-            (dimension.state for dimension in assessment_input.dimensions),
-            key=HEALTH_SEVERITY.__getitem__,
-        )
-        contributors = tuple(
-            contributor
-            for dimension in assessment_input.dimensions
-            for contributor in dimension.contributors
-        )
+        policy_outcome = self._policy_engine.evaluate(assessment_input.dimensions)
+        state = policy_outcome.state
+        contributors = policy_outcome.contributors
         change = self._build_change(
             assessment_input=assessment_input,
             state=state,

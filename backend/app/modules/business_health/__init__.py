@@ -11,6 +11,11 @@ from app.modules.business_health.models import (
     HealthImprovementGuidance,
     HealthState,
 )
+from app.modules.business_health.policy import (
+    MOST_CONCERNING_DIMENSION_RULE,
+    BusinessHealthPolicyEngine,
+    BusinessHealthPolicyOutcome,
+)
 from app.modules.business_health.ports import (
     BusinessHealthAssessmentRepository,
     BusinessHealthInputProvider,
@@ -30,6 +35,8 @@ __all__ = [
     "BusinessHealthAssessmentInput",
     "BusinessHealthAssessmentRepository",
     "BusinessHealthInputProvider",
+    "BusinessHealthPolicyEngine",
+    "BusinessHealthPolicyOutcome",
     "BusinessHealthReadProvider",
     "BusinessHealthService",
     "BusinessHealthSourceRepository",
@@ -44,4 +51,5 @@ __all__ = [
     "HealthDimensionInput",
     "HealthImprovementGuidance",
     "HealthState",
+    "MOST_CONCERNING_DIMENSION_RULE",
 ]
