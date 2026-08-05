@@ -9,12 +9,18 @@ from app.modules.business_brief.es006.models import (
     BusinessBriefSourceReference,
     DeterministicBriefEvidence,
 )
+from app.modules.business_brief.es006.service import (
+    BusinessBriefInput,
+    BusinessBriefService,
+)
 
 __all__ = [
     "ApprovedBriefContext",
     "BusinessBrief",
+    "BusinessBriefInput",
     "BusinessBriefNarrativeItem",
     "BusinessBriefRecommendation",
+    "BusinessBriefService",
     "BusinessBriefSourceKind",
     "BusinessBriefSourceReference",
     "DeterministicBriefEvidence",
