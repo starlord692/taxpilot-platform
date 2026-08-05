@@ -1,5 +1,9 @@
 """Business Confidence capability boundary governed by KP-003 and ES-005."""
 
+from app.modules.business_confidence.explanation import (
+    BusinessConfidenceExplanation,
+    BusinessConfidenceExplanationEngine,
+)
 from app.modules.business_confidence.models import (
     ApprovedConfidenceContext,
     BusinessConfidenceAssessment,
@@ -25,6 +29,8 @@ __all__ = [
     "BusinessConfidenceAssessment",
     "BusinessConfidenceAssessmentInput",
     "BusinessConfidenceAssessmentRepository",
+    "BusinessConfidenceExplanation",
+    "BusinessConfidenceExplanationEngine",
     "BusinessConfidenceInputProvider",
     "BusinessConfidenceReadProvider",
     "BusinessConfidenceService",
