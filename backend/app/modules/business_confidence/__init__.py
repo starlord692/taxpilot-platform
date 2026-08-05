@@ -7,10 +7,16 @@ from app.modules.business_confidence.models import (
     ConfidenceEvidenceKind,
     DeterministicConfidenceEvidence,
 )
+from app.modules.business_confidence.service import (
+    BusinessConfidenceAssessmentInput,
+    BusinessConfidenceService,
+)
 
 __all__ = [
     "ApprovedConfidenceContext",
     "BusinessConfidenceAssessment",
+    "BusinessConfidenceAssessmentInput",
+    "BusinessConfidenceService",
     "BusinessUnderstandingCoverage",
     "ConfidenceEvidenceKind",
     "DeterministicConfidenceEvidence",
