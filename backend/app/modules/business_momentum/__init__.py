@@ -6,6 +6,15 @@ from app.modules.business_momentum.models import (
     MomentumDirection,
     ObservedBusinessChange,
 )
+from app.modules.business_momentum.ports import (
+    BusinessMomentumAssessmentRepository,
+    BusinessMomentumHistoryRepository,
+    BusinessMomentumInputProvider,
+    BusinessMomentumReadProvider,
+    BusinessMomentumSourceRepository,
+    BusinessMomentumTraceability,
+    BusinessMomentumTraceabilityRepository,
+)
 from app.modules.business_momentum.service import (
     BusinessMomentumAssessmentInput,
     BusinessMomentumService,
@@ -14,7 +23,14 @@ from app.modules.business_momentum.service import (
 __all__ = [
     "BusinessMomentumAssessment",
     "BusinessMomentumAssessmentInput",
+    "BusinessMomentumAssessmentRepository",
+    "BusinessMomentumHistoryRepository",
+    "BusinessMomentumInputProvider",
+    "BusinessMomentumReadProvider",
     "BusinessMomentumService",
+    "BusinessMomentumSourceRepository",
+    "BusinessMomentumTraceability",
+    "BusinessMomentumTraceabilityRepository",
     "DeterministicChangeEvidence",
     "MomentumDirection",
     "ObservedBusinessChange",
