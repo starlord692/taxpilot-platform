@@ -7,6 +7,14 @@ from app.modules.business_confidence.models import (
     ConfidenceEvidenceKind,
     DeterministicConfidenceEvidence,
 )
+from app.modules.business_confidence.ports import (
+    BusinessConfidenceAssessmentRepository,
+    BusinessConfidenceInputProvider,
+    BusinessConfidenceReadProvider,
+    BusinessConfidenceSourceRepository,
+    BusinessConfidenceTraceability,
+    BusinessConfidenceTraceabilityRepository,
+)
 from app.modules.business_confidence.service import (
     BusinessConfidenceAssessmentInput,
     BusinessConfidenceService,
@@ -16,7 +24,13 @@ __all__ = [
     "ApprovedConfidenceContext",
     "BusinessConfidenceAssessment",
     "BusinessConfidenceAssessmentInput",
+    "BusinessConfidenceAssessmentRepository",
+    "BusinessConfidenceInputProvider",
+    "BusinessConfidenceReadProvider",
     "BusinessConfidenceService",
+    "BusinessConfidenceSourceRepository",
+    "BusinessConfidenceTraceability",
+    "BusinessConfidenceTraceabilityRepository",
     "BusinessUnderstandingCoverage",
     "ConfidenceEvidenceKind",
     "DeterministicConfidenceEvidence",
