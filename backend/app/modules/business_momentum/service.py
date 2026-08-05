@@ -1,9 +1,4 @@
-"""Deterministic assembly service for authoritative Business Momentum output.
-
-The service validates and assembles supplied direction, relative-rate context, and
-observed change. It does not infer movement, calculate direction or rate, apply
-policy, retrieve data, persist results, call AI, or expose an API.
-"""
+"""Deterministic assembly and policy delegation for Business Momentum."""
 
 import uuid
 from dataclasses import dataclass
@@ -14,6 +9,11 @@ from app.modules.business_momentum.models import (
     DeterministicChangeEvidence,
     MomentumDirection,
     ObservedBusinessChange,
+)
+from app.modules.business_momentum.policy import (
+    BusinessMomentumPolicyEngine,
+    BusinessMomentumPolicyOutcome,
+    MomentumPolicyInput,
 )
 
 
@@ -32,13 +32,17 @@ class BusinessMomentumAssessmentInput:
 
 
 class BusinessMomentumService:
-    """Assemble validated Business Momentum from authoritative input only."""
+    """Assemble authoritative output and delegate policy evaluation."""
+
+    def __init__(
+        self, *, policy_engine: BusinessMomentumPolicyEngine | None = None
+    ) -> None:
+        self._policy_engine = policy_engine
 
     def assemble(
-        self,
-        assessment_input: BusinessMomentumAssessmentInput,
+        self, assessment_input: BusinessMomentumAssessmentInput
     ) -> BusinessMomentumAssessment:
-        """Return immutable output without determining movement or rate."""
+        """Return immutable assembled output without determining movement or rate."""
         self._validate_observation_timing(assessment_input)
         return BusinessMomentumAssessment(
             business_id=assessment_input.business_id,
@@ -50,6 +54,16 @@ class BusinessMomentumService:
             applied_policy_reference=assessment_input.applied_policy_reference,
             limitations=assessment_input.limitations,
         )
+
+    def evaluate_policy(
+        self, policy_input: MomentumPolicyInput
+    ) -> BusinessMomentumPolicyOutcome:
+        """Delegate all deterministic evaluation to the local Policy Engine."""
+        if self._policy_engine is None:
+            raise ValueError(
+                "Business Momentum policy engine is required for evaluation"
+            )
+        return self._policy_engine.evaluate(policy_input)
 
     @staticmethod
     def _validate_observation_timing(

@@ -6,6 +6,16 @@ from app.modules.business_momentum.models import (
     MomentumDirection,
     ObservedBusinessChange,
 )
+from app.modules.business_momentum.policy import (
+    BusinessMomentumPolicyEngine,
+    BusinessMomentumPolicyOutcome,
+    EvidencePrecedence,
+    MomentumPolicyConfiguration,
+    MomentumPolicyInput,
+    MomentumPolicyObservedChange,
+    ObservedChangePolarity,
+    RelativeRateContext,
+)
 from app.modules.business_momentum.ports import (
     BusinessMomentumAssessmentRepository,
     BusinessMomentumHistoryRepository,
@@ -26,12 +36,20 @@ __all__ = [
     "BusinessMomentumAssessmentRepository",
     "BusinessMomentumHistoryRepository",
     "BusinessMomentumInputProvider",
+    "BusinessMomentumPolicyEngine",
+    "BusinessMomentumPolicyOutcome",
     "BusinessMomentumReadProvider",
     "BusinessMomentumService",
     "BusinessMomentumSourceRepository",
     "BusinessMomentumTraceability",
     "BusinessMomentumTraceabilityRepository",
     "DeterministicChangeEvidence",
+    "EvidencePrecedence",
     "MomentumDirection",
+    "MomentumPolicyConfiguration",
+    "MomentumPolicyInput",
+    "MomentumPolicyObservedChange",
     "ObservedBusinessChange",
+    "ObservedChangePolarity",
+    "RelativeRateContext",
 ]
