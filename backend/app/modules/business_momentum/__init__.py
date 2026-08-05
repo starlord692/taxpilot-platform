@@ -1,5 +1,9 @@
 """Business Momentum capability boundary governed by KP-004 and ES-004."""
 
+from app.modules.business_momentum.explanation import (
+    BusinessMomentumExplanation,
+    BusinessMomentumExplanationEngine,
+)
 from app.modules.business_momentum.models import (
     BusinessMomentumAssessment,
     DeterministicChangeEvidence,
@@ -34,6 +38,8 @@ __all__ = [
     "BusinessMomentumAssessment",
     "BusinessMomentumAssessmentInput",
     "BusinessMomentumAssessmentRepository",
+    "BusinessMomentumExplanation",
+    "BusinessMomentumExplanationEngine",
     "BusinessMomentumHistoryRepository",
     "BusinessMomentumInputProvider",
     "BusinessMomentumPolicyEngine",
