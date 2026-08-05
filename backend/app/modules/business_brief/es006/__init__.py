@@ -1,5 +1,9 @@
 """Canonical ES-006 Business Brief migration namespace governed by ES-007."""
 
+from app.modules.business_brief.es006.explanation import (
+    BusinessBriefExplanation,
+    BusinessBriefExplanationEngine,
+)
 from app.modules.business_brief.es006.models import (
     ApprovedBriefContext,
     BusinessBrief,
@@ -26,6 +30,8 @@ from app.modules.business_brief.es006.service import (
 __all__ = [
     "ApprovedBriefContext",
     "BusinessBrief",
+    "BusinessBriefExplanation",
+    "BusinessBriefExplanationEngine",
     "BusinessBriefHistoryRepository",
     "BusinessBriefInput",
     "BusinessBriefInputProvider",
