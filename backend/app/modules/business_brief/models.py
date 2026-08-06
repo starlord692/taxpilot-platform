@@ -10,6 +10,13 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
 
+from app.modules.business_brief.es006.explanation import (
+    BusinessBriefExplanation as CanonicalBusinessBriefExplanation,
+)
+from app.modules.business_brief.es006.models import (
+    BusinessBrief as CanonicalBusinessBrief,
+)
+
 
 class SignalKind(StrEnum):
     """Canonical signal identities consumed by a Business Brief."""
@@ -104,3 +111,7 @@ class BusinessBrief:
     as_of: datetime
     context: BusinessBriefContext
     narrative: BriefNarrative
+    canonical_brief: CanonicalBusinessBrief | None = None
+    canonical_explanation: CanonicalBusinessBriefExplanation | None = None
+    projection_status: str | None = None
+    projection_limitations: tuple[str, ...] = ()
