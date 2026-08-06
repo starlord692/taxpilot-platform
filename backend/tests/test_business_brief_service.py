@@ -213,6 +213,8 @@ async def test_get_brief_integrates_authoritative_inputs_without_redefining_them
     )
 
     assert brief.business_id == business_id
+    assert brief.context is not None
+    assert brief.narrative is not None
     assert brief.requested_by == user_id
     assert brief.narrative.health.kind is SignalKind.HEALTH
     assert brief.narrative.momentum.kind is SignalKind.MOMENTUM

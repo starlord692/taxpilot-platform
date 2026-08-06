@@ -109,8 +109,8 @@ class BusinessBrief:
     business_id: uuid.UUID
     requested_by: uuid.UUID
     as_of: datetime
-    context: BusinessBriefContext
-    narrative: BriefNarrative
+    context: BusinessBriefContext | None
+    narrative: BriefNarrative | None
     canonical_brief: CanonicalBusinessBrief | None = None
     canonical_explanation: CanonicalBusinessBriefExplanation | None = None
     projection_status: str | None = None

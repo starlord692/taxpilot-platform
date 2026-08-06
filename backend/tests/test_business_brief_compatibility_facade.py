@@ -13,7 +13,6 @@ from app.modules.business_brief.es006 import (
 )
 from app.modules.business_brief.exceptions import (
     BusinessBriefAccessDeniedError,
-    BusinessBriefSourceMismatchError,
 )
 from app.modules.business_brief.migration import (
     BusinessBriefCompatibilityContextAlias,
@@ -200,6 +199,8 @@ async def test_facade_translates_es001_request_to_canonical_input_and_response()
     assert result.canonical_explanation is not None
     assert result.canonical_explanation.brief is result.canonical_brief
     assert result.projection_status == "available"
+    assert result.context is not None
+    assert result.narrative is not None
     assert result.projection_limitations is supplied.limitations
     assert result.narrative.health.kind.value == "business_health"
     assert result.narrative.momentum.kind.value == "business_momentum"
@@ -221,6 +222,8 @@ async def test_facade_preserves_alias_traceability_and_temporal_context() -> Non
         )
     )
 
+    assert result.context is not None
+    assert result.narrative is not None
     assert result.context.business_id == business_id
     assert (
         result.context.current_understanding.text
@@ -290,14 +293,21 @@ async def test_facade_rejects_untraceable_descriptor_reference() -> None:
     )
     service, _, _, _ = facade(value=supplied, projection=invalid)
 
-    with pytest.raises(BusinessBriefSourceMismatchError, match="not present"):
-        await service.get_brief(
-            BusinessBriefRequest(
-                business_id=business_id,
-                user_id=uuid.uuid4(),
-                as_of=AS_OF,
-            )
+    result = await service.get_brief(
+        BusinessBriefRequest(
+            business_id=business_id,
+            user_id=uuid.uuid4(),
+            as_of=AS_OF,
         )
+    )
+
+    assert result.projection_status == "unavailable"
+    assert result.context is None
+    assert result.narrative is None
+    assert result.canonical_brief is not None
+    assert result.projection_limitations[-1].startswith(
+        "Compatibility projection unavailable:"
+    )
 
 
 async def test_characterized_legacy_route_remains_available_for_rollback() -> None:

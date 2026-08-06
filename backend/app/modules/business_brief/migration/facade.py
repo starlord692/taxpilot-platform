@@ -10,6 +10,9 @@ or source-capability behavior.
 from uuid import UUID
 
 from app.modules.business_brief.es006.explanation import (
+    BusinessBriefExplanation as CanonicalBusinessBriefExplanation,
+)
+from app.modules.business_brief.es006.explanation import (
     BusinessBriefExplanationEngine,
 )
 from app.modules.business_brief.es006.models import (
@@ -95,35 +98,67 @@ class BusinessBriefCompatibilityFacade:
             brief_at=request.as_of,
             canonical_brief=canonical_brief,
         )
-        self._validate_descriptor(
+        self._validate_descriptor_identity(
             request=request,
             canonical_brief=canonical_brief,
             descriptor=descriptor,
         )
+        try:
+            self._validate_descriptor(
+                request=request,
+                canonical_brief=canonical_brief,
+                descriptor=descriptor,
+            )
+        except BusinessBriefSourceMismatchError as error:
+            result = self._unavailable_response(
+                request=request,
+                canonical_brief=canonical_brief,
+                canonical_explanation=canonical_explanation,
+                limitation=str(error),
+            )
+        else:
+            result = self._available_response(
+                request=request,
+                canonical_brief=canonical_brief,
+                canonical_explanation=canonical_explanation,
+                descriptor=descriptor,
+            )
+        if self._audit_repository is not None:
+            await self._audit_repository.record_retrieval(result)
+        return result
 
-        result = BusinessBrief(
+    @staticmethod
+    def _available_response(
+        *,
+        request: BusinessBriefRequest,
+        canonical_brief: CanonicalBusinessBrief,
+        canonical_explanation: CanonicalBusinessBriefExplanation,
+        descriptor: BusinessBriefCompatibilityProjectionDescriptor,
+    ) -> BusinessBrief:
+        """Build validated aliases while preserving the canonical payload exactly."""
+        return BusinessBrief(
             business_id=request.business_id,
             requested_by=request.user_id,
             as_of=request.as_of,
-            context=self._context_alias(
+            context=BusinessBriefCompatibilityFacade._context_alias(
                 business_id=request.business_id,
                 alias=descriptor.context,
             ),
             narrative=BriefNarrative(
-                current_understanding=self._statement(
+                current_understanding=BusinessBriefCompatibilityFacade._statement(
                     descriptor.context.current_understanding
                 ),
-                health=self._signal_alias(
+                health=BusinessBriefCompatibilityFacade._signal_alias(
                     alias=descriptor.health,
                     expected_kind=BusinessBriefSourceKind.BUSINESS_HEALTH,
                     legacy_kind=SignalKind.HEALTH,
                 ),
-                momentum=self._signal_alias(
+                momentum=BusinessBriefCompatibilityFacade._signal_alias(
                     alias=descriptor.momentum,
                     expected_kind=BusinessBriefSourceKind.BUSINESS_MOMENTUM,
                     legacy_kind=SignalKind.MOMENTUM,
                 ),
-                confidence=self._signal_alias(
+                confidence=BusinessBriefCompatibilityFacade._signal_alias(
                     alias=descriptor.confidence,
                     expected_kind=BusinessBriefSourceKind.BUSINESS_CONFIDENCE,
                     legacy_kind=SignalKind.CONFIDENCE,
@@ -135,9 +170,28 @@ class BusinessBriefCompatibilityFacade:
             projection_status="available",
             projection_limitations=canonical_brief.limitations,
         )
-        if self._audit_repository is not None:
-            await self._audit_repository.record_retrieval(result)
-        return result
+
+    @staticmethod
+    def _unavailable_response(
+        *,
+        request: BusinessBriefRequest,
+        canonical_brief: CanonicalBusinessBrief,
+        canonical_explanation: CanonicalBusinessBriefExplanation,
+        limitation: str,
+    ) -> BusinessBrief:
+        """Return canonical output without inventing an unavailable legacy alias."""
+        return BusinessBrief(
+            business_id=request.business_id,
+            requested_by=request.user_id,
+            as_of=request.as_of,
+            context=None,
+            narrative=None,
+            canonical_brief=canonical_brief,
+            canonical_explanation=canonical_explanation,
+            projection_status="unavailable",
+            projection_limitations=canonical_brief.limitations
+            + (f"Compatibility projection unavailable: {limitation}",),
+        )
 
     @staticmethod
     def _validate_input(
@@ -151,6 +205,31 @@ class BusinessBriefCompatibilityFacade:
         if canonical_input.brief_at != request.as_of:
             raise BusinessBriefSourceMismatchError(
                 "Canonical Brief input does not match the requested point in time"
+            )
+
+    @staticmethod
+    def _validate_descriptor_identity(
+        *,
+        request: BusinessBriefRequest,
+        canonical_brief: CanonicalBusinessBrief,
+        descriptor: BusinessBriefCompatibilityProjectionDescriptor,
+    ) -> None:
+        """Reject cross-business or cross-time data before alias handling."""
+        if descriptor.business_id != request.business_id:
+            raise BusinessBriefSourceMismatchError(
+                "Compatibility projection does not match the requested business"
+            )
+        if descriptor.brief_at != request.as_of:
+            raise BusinessBriefSourceMismatchError(
+                "Compatibility projection does not match the requested point in time"
+            )
+        if canonical_brief.business_id != request.business_id:
+            raise BusinessBriefSourceMismatchError(
+                "Canonical Brief does not match the requested business"
+            )
+        if canonical_brief.brief_at != request.as_of:
+            raise BusinessBriefSourceMismatchError(
+                "Canonical Brief does not match the requested point in time"
             )
 
     @staticmethod
