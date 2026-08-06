@@ -20,7 +20,7 @@ from app.modules.business_brief.models import (
     NarrativeStatement,
     SignalKind,
 )
-from app.modules.business_brief.service import BusinessBriefService
+from app.modules.business_brief.service import LegacyBusinessBriefService
 
 pytestmark = pytest.mark.asyncio
 
@@ -155,14 +155,14 @@ def make_service(
     allowed: bool = True,
     health_kind: SignalKind = SignalKind.HEALTH,
     audit_repository: FakeAuditRepository | None = None,
-) -> BusinessBriefService:
+) -> LegacyBusinessBriefService:
     """Create a service wired only to controlled boundary fakes."""
     context = BusinessBriefContext(
         business_id=business_id,
         current_understanding=statement("Business activity requires attention."),
         business_dna=(EvidenceReference("business-dna", "dna-1", "Retail business"),),
     )
-    return BusinessBriefService(
+    return LegacyBusinessBriefService(
         authorization=FakeAuthorization(allowed),
         context_provider=FakeContextProvider(context),
         health_reader=FakeHealthReader(

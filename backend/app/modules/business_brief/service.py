@@ -22,7 +22,7 @@ from app.modules.business_brief.ports import (
 )
 
 
-class BusinessBriefService:
+class LegacyBusinessBriefService:
     """Assemble a traceable Business Brief from authoritative read-only sources.
 
     This service does not calculate canonical signals, invoke AI, execute actions,
@@ -111,3 +111,29 @@ class BusinessBriefService:
             raise BusinessBriefSourceMismatchError(
                 f"Expected {expected_kind.value}, received {signal.kind.value}"
             )
+
+
+class BusinessBriefService:
+    """ES-001 production boundary routed through the ES-007 facade.
+
+    This boundary preserves the ES-001 request contract while delegating all
+    canonical Brief retrieval and compatibility projection to the temporary,
+    one-way ES-007 migration facade. It does not retain legacy assembly logic.
+    """
+
+    def __init__(
+        self,
+        *,
+        compatibility_facade: "BusinessBriefCompatibilityFacade",
+    ) -> None:
+        """Initialize the production experience boundary with the approved facade."""
+        self._compatibility_facade = compatibility_facade
+
+    async def get_brief(self, request: BusinessBriefRequest) -> BusinessBrief:
+        """Delegate the unchanged ES-001 request to the production facade path."""
+        return await self._compatibility_facade.get_brief(request)
+
+
+from app.modules.business_brief.migration.facade import (  # noqa: E402
+    BusinessBriefCompatibilityFacade,
+)

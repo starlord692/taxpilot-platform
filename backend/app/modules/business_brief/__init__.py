@@ -11,7 +11,10 @@ from app.modules.business_brief.models import (
     EvidenceReference,
     SignalKind,
 )
-from app.modules.business_brief.service import BusinessBriefService
+from app.modules.business_brief.service import (
+    BusinessBriefService,
+    LegacyBusinessBriefService,
+)
 
 __all__ = [
     "BriefItem",
@@ -21,6 +24,7 @@ __all__ = [
     "BusinessBriefContext",
     "BusinessBriefRequest",
     "BusinessBriefService",
+    "LegacyBusinessBriefService",
     "CanonicalSignal",
     "EvidenceReference",
     "SignalKind",
