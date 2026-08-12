@@ -40,6 +40,18 @@ class ApplicabilityMode(StrEnum):
     WHEN = "when"
 
 
+class ApplicabilityOutcome(StrEnum):
+    APPLICABLE = "applicable"
+    NOT_APPLICABLE = "not_applicable"
+    UNAVAILABLE = "unavailable"
+
+
+class EvaluationImpact(StrEnum):
+    CONDITION_UNAVAILABLE = "condition_unavailable"
+    OVERALL_UNAVAILABLE = "overall_unavailable"
+    NO_OVERALL_IMPACT = "no_overall_impact"
+
+
 class StatusHandlingBehavior(StrEnum):
     CONSIDER = "consider"
     IGNORE = "ignore"
@@ -245,16 +257,19 @@ class PolicyDefinition:
 @dataclass(frozen=True, slots=True)
 class PolicyConditionResult:
     condition_id: str
+    applicability: ApplicabilityOutcome
     status: ConditionStatus
     authoritative_references: tuple[ConditionInputReference, ...]
     limitation: str | None = None
+    evaluation_impact: EvaluationImpact = EvaluationImpact.NO_OVERALL_IMPACT
+    unavailable_input_references: tuple[ConditionInputReference, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
 class PolicyEvaluation:
     evaluation_id: str
     business_id: uuid.UUID
-    forecast_identity: object
+    forecast_identity: PublishedForecast
     policy_id: str
     policy_version: str
     evaluation_context: EvaluationContext
@@ -291,8 +306,17 @@ class BusinessForecastPolicyEvaluator:
         ):
             raise ValueError("policy is not effective at evaluation time")
         policy_applies = self._applicable(policy.applicability, context)
+        handling_by_condition = {
+            item.condition_id: item.behavior
+            for item in policy.aggregation.status_handling
+        }
         results = tuple(
-            self._condition(condition, context, policy_applies)
+            self._condition(
+                condition,
+                context,
+                policy_applies,
+                handling_by_condition[condition.condition_id],
+            )
             for condition in policy.conditions
         )
         statuses = {result.condition_id: result.status for result in results}
@@ -346,34 +370,70 @@ class BusinessForecastPolicyEvaluator:
         condition: PolicyCondition,
         context: EvaluationContext,
         policy_applies: bool | None,
+        status_handling: StatusHandlingBehavior,
     ) -> PolicyConditionResult:
         applicable = policy_applies
         if applicable:
             applicable = self._applicable(condition.applicability, context)
         if applicable is None:
-            return self._unavailable(condition)
+            return self._unavailable(
+                condition,
+                ApplicabilityOutcome.UNAVAILABLE,
+                status_handling,
+                context,
+            )
         if not applicable:
             return PolicyConditionResult(
                 condition.condition_id,
+                ApplicabilityOutcome.NOT_APPLICABLE,
                 ConditionStatus.NOT_APPLICABLE,
                 (),
             )
         value = self._condition_expression(condition.expression, context)
         if value is None:
-            return self._unavailable(condition)
+            return self._unavailable(
+                condition,
+                ApplicabilityOutcome.APPLICABLE,
+                status_handling,
+                context,
+            )
         status = ConditionStatus.SATISFIED if value else ConditionStatus.NOT_SATISFIED
         return PolicyConditionResult(
             condition.condition_id,
+            ApplicabilityOutcome.APPLICABLE,
             status,
             self._references(condition.expression),
         )
 
-    def _unavailable(self, condition: PolicyCondition) -> PolicyConditionResult:
+    def _unavailable(
+        self,
+        condition: PolicyCondition,
+        applicability: ApplicabilityOutcome,
+        status_handling: StatusHandlingBehavior,
+        context: EvaluationContext,
+    ) -> PolicyConditionResult:
         return PolicyConditionResult(
             condition.condition_id,
+            applicability,
             ConditionStatus.UNAVAILABLE,
             self._references(condition.expression),
             "required authoritative input is unavailable",
+            (
+                EvaluationImpact.OVERALL_UNAVAILABLE
+                if status_handling is StatusHandlingBehavior.MAP_TO_UNAVAILABLE
+                else EvaluationImpact.CONDITION_UNAVAILABLE
+            ),
+            self._unavailable_references(condition.expression, context),
+        )
+
+    def _unavailable_references(
+        self, expression: ConditionExpression, context: EvaluationContext
+    ) -> tuple[ConditionInputReference, ...]:
+        return tuple(
+            reference
+            for reference in self._references(expression)
+            if context.resolve(reference) is None
+            or not self._valid_type(context.resolve(reference), reference)
         )
 
     def _applicable(
