@@ -9,6 +9,7 @@ infer outcomes, call AI, access repositories, or expose APIs.
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Any
 
 
 def _require_non_blank(value: str, field_name: str) -> None:
@@ -187,11 +188,57 @@ class PublishedForecast:
 
     forecast: BusinessForecast
     published_at: datetime
+    authoritative_inputs: tuple["ForecastAuthoritativeInput", ...] = ()
 
     def __post_init__(self) -> None:
         """Preserve irreversible publication after forecast creation."""
         if self.published_at < self.forecast.created_at:
             raise ValueError("forecast publication cannot precede forecast creation")
+        keys = tuple(
+            (item.source, item.capability, item.field)
+            for item in self.authoritative_inputs
+        )
+        if len(keys) != len(set(keys)):
+            raise ValueError("forecast authoritative inputs must not be duplicated")
+
+
+@dataclass(frozen=True, slots=True)
+class ForecastAuthoritativeInput:
+    """A published, owner-supplied Forecast value for downstream read contracts.
+
+    This is a compatibility read structure only. It preserves an already
+    authoritative value without deriving, discovering, or changing Forecast
+    meaning.
+    """
+
+    source: str
+    capability: str
+    reference_id: str
+    field: str
+    value_type: str
+    value: Any
+
+    def __post_init__(self) -> None:
+        if not all(
+            value.strip()
+            for value in (
+                self.source,
+                self.capability,
+                self.reference_id,
+                self.field,
+                self.value_type,
+            )
+        ):
+            raise ValueError("forecast authoritative input fields must not be blank")
+        if self.value_type not in {
+            "numeric",
+            "text",
+            "boolean",
+            "date",
+            "datetime",
+            "enum",
+        }:
+            raise ValueError("forecast authoritative input value type is not approved")
 
 
 @dataclass(frozen=True, slots=True)
