@@ -36,6 +36,12 @@ class BusinessOpportunityTraceabilityRepository(Protocol):
 
 @runtime_checkable
 class BusinessOpportunityReadProvider(Protocol):
+    async def get_collection(
+        self, *, business_id: uuid.UUID
+    ) -> tuple[BusinessOpportunity, ...]:
+        """Return the owner-published collection in its authoritative order."""
+        ...
+
     async def get_at_time(
         self, *, business_id: uuid.UUID, assessment_time: datetime
     ) -> tuple[BusinessOpportunity, ...]: ...
