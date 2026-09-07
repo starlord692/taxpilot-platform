@@ -178,7 +178,7 @@ Consumers may read and explain the resulting direction, but may not recalculate 
 
 ## 14. Founder Approval Record
 
-This document records the Founder-approved `MOM-FD-013` decisions and the exact coherence/conflict policy adopted as `MOM-DIRECTION-POLICY-001 v1.0`.
+This document records the Founder-approved `MOM-FD-013` and `MOM-FD-013K` decisions and the exact coherence/conflict policy adopted as `MOM-DIRECTION-POLICY-001 v1.0`.
 
 The policy was approved with the following governing positions:
 

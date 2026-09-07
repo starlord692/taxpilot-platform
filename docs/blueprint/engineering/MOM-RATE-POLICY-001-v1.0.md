@@ -62,31 +62,23 @@ Rate classification is based on normalized movement magnitude rather than raw ab
 
 The normalization method must be deterministic and appropriate to the declared dimension and reference basis.
 
-The policy does not authorize implementation to invent a numeric normalization formula where the governing dimension policy has not supplied one.
+For Financial Performance, the approved relative movement is:
+
+```text
+abs(current - comparison) / abs(comparison)
+```
+
+It requires a valid non-zero comparison baseline. This approved dimension-specific rule does not authorize a universal formula for other dimensions.
 
 ## 7. Zero and Near-Zero Baselines
 
-A zero baseline must not produce an undefined or misleading rate through ordinary division.
+A zero baseline produces `NOT_DETERMINABLE`.
 
-For a zero baseline, the applicable approved policy must provide an alternative reference basis; otherwise the rate is:
-
-`NOT_DETERMINABLE`
-
-Near-zero baselines require explicit safeguards so that insignificant denominator changes do not create artificial `RAPID` or `MODERATE` classifications.
-
-Those safeguards must be deterministic and policy-versioned. No implementation default may be treated as an approved business threshold.
+A near-zero baseline produces `NOT_DETERMINABLE` unless separately approved. No implementation default, currency conversion, or unconfigured near-zero threshold may be used.
 
 ## 8. Sign-Transition Safeguards
 
-Movement across zero requires explicit treatment because a sign transition can make a simple relative-rate calculation misleading.
-
-A sign-transition case must use the applicable approved reference basis and deterministic rule.
-
-If the approved semantics cannot determine a meaningful rate, the result is:
-
-`NOT_DETERMINABLE`
-
-The implementation must not manufacture a rate from an unstable or semantically invalid denominator.
+Movement across zero produces `NOT_DETERMINABLE`. The implementation must not manufacture a rate from a sign transition or unstable denominator.
 
 ## 9. Period Comparability
 
@@ -94,21 +86,21 @@ Current and comparison periods must be semantically and temporally comparable un
 
 A rate must not be calculated from incompatible granularities, invalid windows, or evidence that cannot support the declared comparison.
 
+For Financial Performance, current and comparison currency must be compatible under the Accounting evidence contract. Momentum must not perform currency conversion. An incompatible currency results in `NOT_DETERMINABLE`.
+
 No valid comparison context results in:
 
 `NOT_DETERMINABLE`
 
 ## 10. Ordered Rate Bands
 
-Where a valid normalized movement magnitude is available, the approved rate vocabulary is ordered from lower to higher observed relative movement:
+Where a valid Financial Performance normalized movement magnitude is available, the approved bands are:
 
-`GRADUAL → MODERATE → RAPID`
+- below 10% → `GRADUAL`;
+- 10% inclusive to below 25% → `MODERATE`;
+- 25% inclusive or greater → `RAPID`.
 
-The boundaries between these categories must have explicit inclusivity semantics.
-
-The threshold values are **policy parameters**, not implementation defaults. They require explicit Founder approval before being instantiated as numeric business rules.
-
-This artifact therefore does not invent or imply numeric percentage bands.
+The bands are ordered `GRADUAL → MODERATE → RAPID`. Their stated inclusivity is authoritative. Other dimensions require their own explicit approved policy parameters.
 
 ## 11. Direction Independence
 
@@ -157,13 +149,7 @@ No failure state may be silently converted into `GRADUAL`, `MODERATE`, or `RAPID
 
 ## 14. Whole-Business Rate
 
-Whole-business rate is a separate deterministic combination problem from dimension-level rate classification.
-
-This policy does **not** authorize numerical averaging, weighted averaging, scoring, or ranking of dimension rates.
-
-A whole-business rate may only be produced under a separate explicit, deterministic, transparent, versioned, Founder-approved categorical combination policy.
-
-Until such a policy exists, implementation must not invent one.
+Whole-business rate is `NOT_DETERMINABLE` in v1.0. This policy does not authorize numerical averaging, weighted averaging, scoring, ranking, or any whole-business rate-combination policy.
 
 ## 15. Historical Preservation
 
@@ -212,7 +198,7 @@ Any future change to rate semantics or thresholds requires a new approved policy
 This policy does not authorize:
 
 - universal numeric thresholds;
-- percentage bands not separately approved;
+- percentage bands outside the approved Financial Performance rule or not separately approved;
 - dimension-specific thresholds not Founder-approved;
 - rate scoring;
 - numerical averaging;
@@ -239,9 +225,9 @@ The approved policy positions are:
 - period comparability;
 - ordered `GRADUAL → MODERATE → RAPID` bands;
 - explicit threshold inclusivity;
-- thresholds treated as policy parameters requiring Founder approval;
+- approved Financial Performance 10% and 25% bands with explicit inclusivity, and separate approval required for other dimension parameters;
 - no rate score or averaging;
-- separate policy required for whole-business rate combination;
+- whole-business rate is `NOT_DETERMINABLE` in v1.0;
 - fail-closed behavior;
 - historical preservation and policy versioning;
 - no AI authority.

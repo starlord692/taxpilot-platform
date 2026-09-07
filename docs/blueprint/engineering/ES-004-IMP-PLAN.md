@@ -27,7 +27,7 @@ The implementation shall consume authoritative evidence only through the registe
 
 For v1.0, the only registered contract is:
 
-**AFPE-CONTRACT-001 v1.0**
+**AFPE-CONTRACT-001 v1.2**
 
 The only currently registered Momentum-eligible fields are:
 
@@ -38,6 +38,8 @@ The only currently registered Momentum-eligible fields are:
 Momentum must not directly depend on Accounting internal models, repositories, services, or database tables.
 
 The implementation must not treat existing Accounting read models as a substitute for the owner-published evidence contract.
+
+Accounting resolves permitted Financial Performance observation contexts. For every comparison, Momentum retrieves independent `current_result` and `comparison_result` values through AFPE v1.2 and consumes Accounting's field-level materiality determination. Momentum must not construct Accounting observation contexts or calculate or reinterpret Accounting materiality.
 
 ## 4. V1.0 Dimension Coverage
 
@@ -112,6 +114,8 @@ Before evidence is used, the implementation must validate the requirements estab
 - provenance;
 - material contradiction state;
 - applicable limitations.
+
+Financial Performance evidence also requires valid baseline eligibility and compatible currency under AFPE v1.2. Zero, near-zero unless separately approved, undeterminable baseline, different currency, or an invalid/non-comparable result fails closed for rate.
 
 Evidence that cannot support a valid deterministic conclusion must fail closed.
 
@@ -188,6 +192,8 @@ The implementation must respect the approved handling for:
 - insufficient evidence.
 
 No unapproved numerical thresholds may be invented during implementation.
+
+For Financial Performance, relative movement is `abs(current - comparison) / abs(comparison)` using a valid non-zero comparison baseline. Below 10% is `GRADUAL`; 10% to below 25% is `MODERATE`; 25% or greater is `RAPID`. Stable movement, invalid or unavailable evidence, insufficient evidence, stale evidence, contradictory evidence, non-comparable periods, zero or near-zero baseline unless separately approved, and sign transition result in `NOT_DETERMINABLE`. Whole-business rate is `NOT_DETERMINABLE` in v1.0.
 
 Rate must not become a score, average, ranking, confidence value, prediction, or recommendation.
 

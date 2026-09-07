@@ -17,11 +17,11 @@ Authoritative dependencies:
 - `KP-004` — Business Momentum product boundary
 - `ES-004-IAG` — implementation authorization
 - `ES-004-IMP-PLAN` — implementation plan
-- `AFPE-CONTRACT-001 v1.0` — Accounting Financial Performance Evidence Contract
+- `AFPE-CONTRACT-001 v1.2` — Accounting Financial Performance Evidence Contract
 - `MOM-DIRECTION-POLICY-001 v1.0`
 - `MOM-RATE-POLICY-001 v1.0`
 - `MOM-COMPARISON-POLICY-001 v1.0`
-- approved MOM-FD-011A/011B and MOM-FD-012–016 decisions
+- approved MOM-FD-011A/011B, MOM-FD-012–016, MOM-FD-013K, MOM-FD-014N, MOM-FD-018, MOM-FD-019, and MOM-FD-020 decisions
 
 ## 2. Authority Chain
 
@@ -30,7 +30,7 @@ The implementation shall preserve the following authority chain:
 ```text
 Accounting authoritative financial facts
         ↓
-AFPE-CONTRACT-001 v1.0
+AFPE-CONTRACT-001 v1.2
         ↓
 Business Momentum Evidence Registry
         ↓
@@ -47,7 +47,7 @@ Momentum is not an Accounting subsystem and must not bypass the evidence-contrac
 
 ## 3. Authoritative Evidence
 
-For v1.0, Momentum may consume only the following registered fields from `AFPE-CONTRACT-001 v1.0`:
+For v1.0, Momentum may consume only the following registered fields from `AFPE-CONTRACT-001 v1.2`:
 
 - `period_revenue_total`
 - `period_expense_total`
@@ -56,6 +56,8 @@ For v1.0, Momentum may consume only the following registered fields from `AFPE-C
 The contract is the technology-neutral evidence boundary.
 
 Momentum must not directly consume Accounting persistence models, repositories, services, or internal APIs as authoritative evidence.
+
+Momentum shall use AFPE v1.2 to obtain Accounting-resolved observation contexts and independent `current_result` and `comparison_result` evidence results. It shall consume Accounting's field-level materiality determination and must not construct Accounting period semantics, calculate Accounting materiality, perform currency conversion, or infer a baseline rule.
 
 In particular, these are not direct Momentum evidence sources:
 
@@ -196,6 +198,8 @@ Rate determination must:
 - require comparable periods;
 - fail closed when determination is not possible.
 
+For Financial Performance, relative movement is `abs(current - comparison) / abs(comparison)` and requires a valid non-zero comparison baseline. Below 10% is `GRADUAL`; 10% to below 25% is `MODERATE`; 25% or greater is `RAPID`. Stable movement, invalid/unavailable/insufficient/stale/contradictory evidence, non-comparable periods, zero baseline, near-zero baseline unless separately approved, sign transition, invalid baseline eligibility, or incompatible currency produce `NOT_DETERMINABLE`. Whole-business rate is `NOT_DETERMINABLE` in v1.0.
+
 No numerical rate thresholds may be invented during implementation. Thresholds or other substantive policy parameters must come from the approved policy authority.
 
 Rate must not become:
@@ -237,6 +241,8 @@ The artifact must be sufficient for a consumer to retrieve and explain the canon
 ## 10. Artifact Identity and Immutability
 
 Each canonical Momentum assessment must have a distinct stable assessment identity within its business scope.
+
+Assessment identity is layered and business-scoped. A correction creates a new assessment identity. The assessment preserves explicit temporal context. Deterministic history retrieval orders by `assessment_created_at` first and `assessment_identity` only as the deterministic tie-breaker. Ordering and explicit correction lineage are separate concepts.
 
 Historical canonical assessments are immutable.
 

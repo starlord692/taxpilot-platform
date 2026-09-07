@@ -90,6 +90,12 @@ Serialization must not introduce hidden scores, rankings, inferred confidence, p
 
 No technology-specific serialization format is prescribed by this governance record unless separately authorized.
 
+## 9A. Identity and Deterministic History
+
+The canonical assessment uses layered, business-scoped assessment identity and preserves explicit temporal context. Every correction creates a new assessment identity.
+
+For deterministic historical retrieval, `assessment_created_at` is the primary ordering field and `assessment_identity` is the deterministic tie-breaker. Ordering and correction lineage are separate concepts: neither may be inferred from the other.
+
 ## 10. Lifecycle Boundary
 
 The canonical artifact is the authoritative historical assessment object once created under the approved Momentum semantics.
@@ -151,5 +157,8 @@ The approved summary is:
 - explicit correction lineage;
 - historical retrieval preservation;
 - corrections create a new assessment while preserving predecessor lineage.
+- layered business-scoped assessment identity and explicit temporal context;
+- deterministic history ordering by `assessment_created_at`, then `assessment_identity`;
+- ordering separate from lineage.
 
 **Implementation boundary:** The artifact semantics are authoritative for ES-004. Technology-specific implementation details remain subordinate to the approved engineering specification and must not add business-policy behavior.

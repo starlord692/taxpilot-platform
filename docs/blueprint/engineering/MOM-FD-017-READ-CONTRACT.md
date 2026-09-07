@@ -56,7 +56,7 @@ A historical assessment must be returned as the assessment that was published un
 
 Where a later correction or reconstruction exists, it is represented as a distinct assessment with explicit lineage to the affected predecessor rather than destructively replacing the predecessor.
 
-History ordering must be deterministic and must use the canonical assessment's declared temporal/identity context. Implementations must not infer business meaning from database row ordering alone.
+History ordering is deterministic: `assessment_created_at` is the primary ordering field and `assessment_identity` is the deterministic tie-breaker. The canonical assessment's declared temporal/identity context remains preserved. Ordering is separate from correction lineage, and implementations must not infer business meaning from database row ordering alone.
 
 ## 6. Immutability
 

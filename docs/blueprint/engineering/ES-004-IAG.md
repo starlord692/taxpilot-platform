@@ -20,7 +20,7 @@ Business Momentum shall consume only authoritative evidence exposed through the 
 
 For v1.0, the authoritative registered evidence contract is:
 
-**AFPE-CONTRACT-001 v1.0**
+**AFPE-CONTRACT-001 v1.2**
 
 The explicitly registered Momentum-eligible fields are:
 
@@ -41,6 +41,8 @@ In particular, the following are not Momentum evidence boundaries:
 - internal Accounting services
 
 Future evidence contracts may become authoritative only through the approved evidence-contract registration process.
+
+Momentum shall use the v1.2 owner-published request and response boundary: Accounting resolves permitted observation contexts, and Momentum retrieves independent `current_result` and `comparison_result` evidence results. Momentum consumes Accounting's field-level materiality determination and does not determine or reinterpret Accounting materiality, observation-period semantics, baseline eligibility, or currency compatibility.
 
 ## 3. Approved Momentum Policies
 
@@ -177,6 +179,8 @@ Implementation shall:
 - require comparable periods;
 - fail closed where rate cannot be determined.
 
+For Financial Performance, rate uses the approved current/comparison formulation and approved bands. Invalid, unavailable, insufficient, stale, contradictory, non-comparable, zero-baseline, near-zero-baseline unless separately approved, sign-transition, or currency-incompatible evidence results in `NOT_DETERMINABLE`. Whole-business rate is `NOT_DETERMINABLE` in v1.0. Momentum must not perform currency conversion or invent near-zero configuration.
+
 Implementation must not invent numerical rate thresholds or convert rate into a score.
 
 AI must not determine or override rate.
@@ -257,7 +261,7 @@ This authorization does not authorize:
 
 - modification of Accounting reversal semantics;
 - modification of Accounting correction/restatement semantics;
-- modification of `AFPE-CONTRACT-001 v1.0`;
+- modification of `AFPE-CONTRACT-001 v1.2`;
 - invention of Accounting materiality thresholds;
 - invention of comparison windows;
 - Momentum scoring;
