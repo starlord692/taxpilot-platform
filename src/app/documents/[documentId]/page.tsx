@@ -1,0 +1,1 @@
+import{DocumentDetail}from"@/components/documents/document-detail";export default async function Page({params}:{params:Promise<{documentId:string}>}){return <DocumentDetail id={(await params).documentId}/>}

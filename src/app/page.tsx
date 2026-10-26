@@ -1,103 +1,29 @@
-import Image from "next/image";
+"use client";
+import { Bot, Boxes, CircleDollarSign, FileText, Landmark, ReceiptIndianRupee, ShoppingBag, TrendingDown, TrendingUp, WalletCards } from "lucide-react";
+import { useAuth } from "@/contexts/auth-context";
+import { useDashboardViewModel } from "@/features/dashboard/hooks/use-dashboard-view-model";
+import { formatCurrency, formatDate } from "@/features/dashboard/utils/dashboard-formatters";
+import { Alert } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { BusinessOverviewCard } from "@/components/dashboard/business-overview-card";
+import { ChartCard } from "@/components/dashboard/chart-card";
+import { DashboardHeader } from "@/components/dashboard/dashboard-header";
+import { DashboardLayout } from "@/components/dashboard/dashboard-layout";
+import { DashboardSkeleton } from "@/components/dashboard/dashboard-skeleton";
+import { EmptyState } from "@/components/dashboard/empty-state";
+import { MetricCard } from "@/components/dashboard/metric-card";
+import { QuickActionsCard } from "@/components/dashboard/quick-actions-card";
+import { RecentActivityCard, type ActivityItem } from "@/components/dashboard/recent-activity-card";
+import { StatusCard } from "@/components/dashboard/status-card";
 
-export default function Home() {
-  return (
-    <div className="font-sans grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="font-mono list-inside list-decimal text-sm/6 text-center sm:text-left">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] font-mono font-semibold px-1 py-0.5 rounded">
-              src/app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
+const metrics = [{ label: "Revenue", icon: TrendingUp }, { label: "Expenses", icon: TrendingDown }, { label: "Purchases", icon: ShoppingBag }, { label: "Profit", icon: CircleDollarSign }, { label: "GST Liability", icon: Landmark }, { label: "Inventory Value", icon: Boxes }];
+const charts = [{ title: "Revenue Trend", description: "A revenue aggregation endpoint is not currently available." }, { title: "Expense Trend", description: "The API does not provide complete aggregated expense trends." }, { title: "Cash Flow", description: "A cash-flow endpoint is not currently available." }, { title: "Monthly GST", description: "Monthly GST liability aggregates are not currently available." }, { title: "Inventory Trend", description: "Historical inventory valuation is not currently available.", wide: true }];
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
-        </div>
-      </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
-    </div>
-  );
+export default function DashboardPage() { const { user, isAuthenticated } = useAuth(); const model = useDashboardViewModel(); const { context, business, gst, activity, health, lastSync } = model;
+  if (context.contextStatus === "loading") return <DashboardLayout><DashboardSkeleton /></DashboardLayout>;
+  if (context.contextStatus === "error") return <DashboardLayout><DashboardHeader firstName={user?.first_name} /><Alert><div><p className="font-medium">Business context could not be loaded</p><p className="mt-1 text-xs text-muted-foreground">The dashboard needs an accessible business before it can load operational data.</p><Button variant="outline" size="sm" className="mt-3" onClick={() => context.refetch()}>Try again</Button></div></Alert></DashboardLayout>;
+  if (context.contextStatus === "none" || context.contextStatus === "selection-required") return <DashboardLayout><DashboardHeader firstName={user?.first_name} /><section className="rounded-xl border bg-card"><EmptyState title={context.contextStatus === "none" ? "No business available" : "Choose a business to continue"} description={context.contextStatus === "none" ? "No business is available for this account. Dashboard data will appear after a business membership is added." : "This account can access multiple businesses. Business selection is not part of FP-002, so no financial data has been loaded."} /></section><StatusCard health={health.data?.data} healthLoading={health.isLoading} authenticated={isAuthenticated} lastSync={lastSync} /></DashboardLayout>;
+  const expenseItems: ActivityItem[] = (activity.expenses.data?.data ?? []).map((item) => ({ id: item.id, title: item.expense_number, subtitle: formatDate(item.expense_date), amount: formatCurrency(item.total_amount), status: item.status }));
+  const purchaseItems: ActivityItem[] = (activity.purchases.data?.data ?? []).map((item) => ({ id: item.id, title: item.purchase_number, subtitle: `${item.invoice_number} · ${formatDate(item.invoice_date)}`, amount: formatCurrency(item.total_amount), status: item.status }));
+  return <DashboardLayout><DashboardHeader firstName={user?.first_name} /><BusinessOverviewCard business={business!} gst={gst.data?.data.find((registration) => registration.is_active)} gstLoading={gst.isLoading} gstError={gst.isError} /><section aria-labelledby="key-metrics-title"><div className="mb-3"><h2 id="key-metrics-title" className="text-sm font-semibold">Key Metrics</h2><p className="mt-1 text-xs text-muted-foreground">Financial aggregates will appear when verified summary APIs are available.</p></div><div className="grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-6">{metrics.map((metric) => <MetricCard key={metric.label} {...metric} />)}</div></section><section aria-labelledby="trends-title"><h2 id="trends-title" className="mb-3 text-sm font-semibold">Trends</h2><div className="grid gap-4 lg:grid-cols-2">{charts.map((chart) => <ChartCard key={chart.title} title={chart.title} description={chart.description} className={chart.wide ? "lg:col-span-2" : ""} />)}</div></section><section aria-labelledby="recent-activity-title"><h2 id="recent-activity-title" className="mb-3 text-sm font-semibold">Recent Activity</h2><div className="grid gap-4 lg:grid-cols-2"><RecentActivityCard title="Recent Invoices" icon={WalletCards} unavailableReason="The invoice API does not expose a verified recent-order contract." /><RecentActivityCard title="Recent Expenses" icon={ReceiptIndianRupee} items={expenseItems} isLoading={activity.expenses.isLoading} isError={activity.expenses.isError} onRetry={() => activity.expenses.refetch()} /><RecentActivityCard title="Recent Purchases" icon={ShoppingBag} items={purchaseItems} isLoading={activity.purchases.isLoading} isError={activity.purchases.isError} onRetry={() => activity.purchases.refetch()} /><RecentActivityCard title="Recent Documents" icon={FileText} unavailableReason="The document API does not expose a verified recent-order contract." /></div></section><section className="grid gap-4 lg:grid-cols-3"><QuickActionsCard /><section className="rounded-xl border bg-gradient-to-br from-primary/[0.08] to-card p-5" aria-labelledby="ai-title"><span className="grid size-9 place-items-center rounded-xl bg-primary/10 text-primary"><Bot className="size-4" /></span><h2 id="ai-title" className="mt-5 text-sm font-semibold">AI Assistant coming soon</h2><p className="mt-2 text-xs leading-5 text-muted-foreground">A reserved space for future TaxPilot Copilot capabilities. No AI functionality is active.</p></section><StatusCard health={health.data?.data} healthLoading={health.isLoading} authenticated={isAuthenticated} lastSync={lastSync} /></section></DashboardLayout>;
 }

@@ -1,0 +1,12 @@
+import type { PurchaseStatus } from "../types/purchases.types";
+export const parsePage = (value: string | null) => { const number = Number(value); return Number.isInteger(number) && number > 0 ? number : 1; };
+export const parsePageSize = (value: string | null) => [10, 20, 50, 100].includes(Number(value)) ? Number(value) : 20;
+export const supplierSorts = ["created_at", "-created_at", "name", "-name", "supplier_code", "-supplier_code", "email", "-email", "is_active", "-is_active"];
+export const purchaseSorts = ["created_at", "-created_at", "invoice_date", "-invoice_date", "due_date", "-due_date", "purchase_number", "-purchase_number", "supplier_name", "-supplier_name"];
+export const parseSort = (value: string | null, allowed: string[], fallback: string) => value && allowed.includes(value) ? value : fallback;
+export const statuses: PurchaseStatus[] = ["draft", "approved", "received", "paid", "cancelled"];
+export const parseStatus = (value: string | null) => statuses.includes(value as PurchaseStatus) ? value as PurchaseStatus : undefined;
+export const nextActions = (status: PurchaseStatus): Array<"approve" | "receive" | "pay" | "cancel"> => status === "draft" ? ["approve", "cancel"] : status === "approved" ? ["receive", "cancel"] : status === "received" ? ["pay", "cancel"] : [];
+export const formatDate = (value: string | null) => value ? new Intl.DateTimeFormat("en-IN", { dateStyle: "medium" }).format(new Date(value)) : "Unavailable";
+export const formatMoney = (value: string | number) => new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR" }).format(Number(value));
+export const titleCase = (value: string) => value.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());

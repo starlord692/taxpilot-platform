@@ -1,0 +1,7 @@
+"use client";
+import { useBusiness } from "@/contexts/business-context";
+import { BusinessSwitcher } from "./business-switcher";
+import { BusinessLayoutSkeleton } from "./business-layout-skeleton";
+import { EmptyState } from "@/components/dashboard/empty-state";
+import { Button } from "@/components/ui/button";
+export function BusinessRouteShell({ children }: { children: React.ReactNode }) { const { status, revalidateBusiness } = useBusiness(); if (status === "initializing") return <BusinessLayoutSkeleton />; if (status === "unavailable") return <section className="rounded-xl border bg-card p-6 text-center" role="alert"><h2 className="font-semibold">Business context unavailable</h2><p className="mt-2 text-sm text-muted-foreground">Accessible businesses could not be verified.</p><Button variant="outline" className="mt-4" onClick={() => void revalidateBusiness()}>Try again</Button></section>; if (status === "no-business") return <section className="rounded-xl border bg-card"><EmptyState title="No business available" description="This account has no accessible business membership." /></section>; if (status === "selection-required") return <section className="rounded-xl border bg-card p-6"><EmptyState title="Choose a business to continue" description="Select one of your accessible businesses. Invalid selections are not accepted." /><div className="mx-auto max-w-sm"><BusinessSwitcher /></div></section>; return children; }

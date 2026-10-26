@@ -1,0 +1,4 @@
+import { Building2 } from "lucide-react";
+import type { BusinessSummary } from "@/features/business/types/business.types";
+import { StatusBadge } from "./status-badge";
+export function BusinessCard({ business }: { business: BusinessSummary }) { return <section className="rounded-xl border bg-card p-5"><div className="flex items-start gap-4"><span className="grid size-10 place-items-center rounded-xl bg-primary/10 text-primary"><Building2 className="size-5" /></span><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><h2 className="text-lg font-semibold">{business.trade_name || business.legal_name}</h2><StatusBadge label={business.status} positive={business.status === "active"} /></div><p className="mt-1 text-sm text-muted-foreground">{business.legal_name}</p><p className="mt-3 text-xs capitalize text-muted-foreground">{business.business_type.replaceAll("_", " ")}</p></div></div></section>; }

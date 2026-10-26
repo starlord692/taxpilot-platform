@@ -1,0 +1,1 @@
+export const page=(v:string|null)=>Math.max(1,Number(v)||1);export const size=(v:string|null)=>[10,20,50,100].includes(Number(v))?Number(v):20;export const title=(v:string)=>v.replaceAll("_"," ").replace(/\b\w/g,c=>c.toUpperCase());export const money=(v:unknown)=>new Intl.NumberFormat(undefined,{style:"currency",currency:"INR"}).format(Number(v));

@@ -1,0 +1,1 @@
+import { PurchaseDetail } from "@/components/purchases/purchase-detail"; export default async function Page({ params }: { params: Promise<{ purchaseId: string }> }) { return <PurchaseDetail id={(await params).purchaseId} />; }
