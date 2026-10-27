@@ -129,7 +129,11 @@ class IdentityUserRepository(BaseRepository[IdentityUser]):
     ) -> IdentityUser:
         """Lock a user until the provided timestamp."""
         user.status = UserStatus.LOCKED
-        user.locked_until = locked_until
+        user.locked_until = (
+            locked_until.replace(tzinfo=None)
+            if (locked_until and locked_until.tzinfo)
+            else locked_until
+        )
         self.session.add(user)
         await self.session.flush()
         return user
@@ -163,7 +167,9 @@ class IdentityUserRepository(BaseRepository[IdentityUser]):
         login_at: datetime,
     ) -> IdentityUser:
         """Update the user's last login timestamp."""
-        user.last_login_at = login_at
+        user.last_login_at = (
+            login_at.replace(tzinfo=None) if login_at.tzinfo else login_at
+        )
         self.session.add(user)
         await self.session.flush()
         return user
