@@ -196,7 +196,8 @@ class ExpenseService:
                 )
             )
             await uow.commit()
-        return ExpenseResponse.model_validate(expense)
+            reloaded = await uow.expenses.get_by_id(expense.id)
+            return ExpenseResponse.model_validate(reloaded or expense)
 
     async def update_expense(
         self,
@@ -234,7 +235,8 @@ class ExpenseService:
                 )
             )
             await uow.commit()
-        return ExpenseResponse.model_validate(expense)
+            reloaded = await uow.expenses.get_by_id(expense.id)
+            return ExpenseResponse.model_validate(reloaded or expense)
 
     async def approve_expense(self, expense_id: uuid.UUID) -> ExpenseResponse:
         """Approve a draft expense."""
@@ -273,8 +275,7 @@ class ExpenseService:
         """Return an expense by UUID."""
         async with self._unit_of_work_factory() as uow:
             expense = await self._get_existing_expense(uow, expense_id)
-            await uow.commit()
-        return ExpenseResponse.model_validate(expense)
+            return ExpenseResponse.model_validate(expense)
 
     async def list_expenses(
         self,
@@ -298,12 +299,12 @@ class ExpenseService:
                 expense_date_from=expense_date_from,
                 expense_date_to=expense_date_to,
             )
-            await uow.commit()
-        return Page.create(
-            items=[ExpenseResponse.model_validate(expense) for expense in page.items],
-            total=page.meta.total,
-            params=pagination or PaginationParams(),
-        )
+            items = [ExpenseResponse.model_validate(expense) for expense in page.items]
+            return Page.create(
+                items=items,
+                total=page.meta.total,
+                params=pagination or PaginationParams(),
+            )
 
     async def _transition_expense(
         self,
@@ -331,7 +332,8 @@ class ExpenseService:
             )
             await self._dispatch_status_event(expense, event_name)
             await uow.commit()
-        return ExpenseResponse.model_validate(expense)
+            reloaded = await uow.expenses.get_by_id(expense.id)
+            return ExpenseResponse.model_validate(reloaded or expense)
 
     async def _get_existing_expense(
         self,

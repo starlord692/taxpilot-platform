@@ -157,6 +157,9 @@ class ExpenseRepository(BaseRepository[Expense]):
         """Return summary expense select without child collections."""
         return (
             select(Expense)
+            .options(
+                selectinload(Expense.vendor),
+            )
             .where(Expense.is_deleted.is_(False))
         )
 
