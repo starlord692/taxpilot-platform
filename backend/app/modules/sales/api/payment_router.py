@@ -38,7 +38,10 @@ SalesUnitOfWorkDependency = Annotated[Any, Depends(get_sales_unit_of_work)]
         HTTPStatus.FORBIDDEN: {"model": ErrorResponse},
         HTTPStatus.NOT_FOUND: {"model": ErrorResponse},
         HTTPStatus.CONFLICT: {"model": ErrorResponse},
-        HTTPStatus.UNPROCESSABLE_ENTITY: {"model": ErrorResponse},
+        HTTPStatus.BAD_REQUEST: {
+            "model": ErrorResponse,
+            "description": "Request validation failed.",
+        },
     },
 )
 async def record_payment(
@@ -82,11 +85,12 @@ async def get_payment(
     """Return a payment."""
     async with uow:
         payment = await _get_payment_for_user(uow, payment_id, current_user.id)
+        payment_response = PaymentResponse.model_validate(payment)
 
     return SuccessResponse(
         success=True,
         message="Payment returned successfully",
-        data=PaymentResponse.model_validate(payment),
+        data=payment_response,
     )
 
 
@@ -102,7 +106,10 @@ async def get_payment(
         HTTPStatus.FORBIDDEN: {"model": ErrorResponse},
         HTTPStatus.NOT_FOUND: {"model": ErrorResponse},
         HTTPStatus.CONFLICT: {"model": ErrorResponse},
-        HTTPStatus.UNPROCESSABLE_ENTITY: {"model": ErrorResponse},
+        HTTPStatus.BAD_REQUEST: {
+            "model": ErrorResponse,
+            "description": "Request validation failed.",
+        },
     },
 )
 async def update_payment(

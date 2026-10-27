@@ -2,7 +2,7 @@
 
 import uuid
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -102,6 +102,66 @@ class ChartOfAccountsRepository(BaseRepository[Account]):
             .where(
                 Account.business_id == business_id,
                 Account.account_code == account_code,
+                Account.is_deleted.is_(False),
+            )
+        )
+        result = await self.session.execute(statement)
+        return result.scalar_one_or_none()
+
+    async def list_accounts(
+        self,
+        *,
+        business_id: uuid.UUID,
+        category: str | None = None,
+        is_active: bool | None = None,
+        search: str | None = None,
+    ) -> list[Account]:
+        """List chart accounts for a business with optional filtering."""
+        statement = (
+            select(Account)
+            .options(
+                selectinload(Account.account_type).selectinload(AccountType.category),
+                selectinload(Account.parent_account),
+            )
+            .where(
+                Account.business_id == business_id,
+                Account.is_deleted.is_(False),
+            )
+        )
+        if is_active is not None:
+            statement = statement.where(Account.is_active == is_active)
+        if search:
+            pattern = f"%{search.strip()}%"
+            statement = statement.where(
+                Account.account_code.ilike(pattern)
+                | Account.account_name.ilike(pattern)
+            )
+        if category:
+            statement = (
+                statement.join(Account.account_type)
+                .join(AccountType.category)
+                .where(func.lower(AccountCategory.name) == category.strip().lower())
+            )
+        statement = statement.order_by(Account.account_code.asc())
+        result = await self.session.execute(statement)
+        return list(result.scalars().unique().all())
+
+    async def get_by_id(
+        self,
+        *,
+        business_id: uuid.UUID,
+        account_id: uuid.UUID,
+    ) -> Account | None:
+        """Return a business account by ID with eager loaded types."""
+        statement = (
+            select(Account)
+            .options(
+                selectinload(Account.account_type).selectinload(AccountType.category),
+                selectinload(Account.parent_account),
+            )
+            .where(
+                Account.id == account_id,
+                Account.business_id == business_id,
                 Account.is_deleted.is_(False),
             )
         )

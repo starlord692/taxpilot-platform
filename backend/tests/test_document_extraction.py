@@ -94,9 +94,7 @@ class FakeOCRResultRepository:
 
     async def list_by_document(self, document_id: uuid.UUID) -> list[OCRResult]:
         """Return OCR results by document UUID."""
-        return [
-            result for result in self.results if result.document_id == document_id
-        ]
+        return [result for result in self.results if result.document_id == document_id]
 
 
 @dataclass
@@ -341,9 +339,7 @@ async def test_invalid_gstin_pan_and_low_confidence() -> None:
 
     assert extraction.review_required is True
     assert extraction.overall_confidence < Decimal("90.00")
-    assert any(
-        "invalid GSTIN" in review.reason for review in extraction.reviews
-    )
+    assert any("invalid GSTIN" in review.reason for review in extraction.reviews)
 
 
 @pytest.mark.asyncio

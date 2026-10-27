@@ -313,9 +313,7 @@ class FakeReviewUnitOfWork:
         duplicate_invoice_number: str | None = None,
     ) -> None:
         """Initialize fake repositories."""
-        self.extracted_documents = FakeExtractedDocumentRepository(
-            [extracted_document]
-        )
+        self.extracted_documents = FakeExtractedDocumentRepository([extracted_document])
         self.extracted_fields = FakeExtractedFieldRepository()
         self.validation_issues = FakeValidationIssueRepository()
         self.document_reviews = FakeDocumentReviewRepository(
@@ -455,9 +453,7 @@ async def test_validation_detects_duplicate_and_format_issues() -> None:
     assert ValidationCategory.DUPLICATE in categories
     assert ValidationCategory.GST in categories
     assert ValidationCategory.PAN in categories
-    assert any(
-        issue.severity == ValidationSeverity.ERROR for issue in response.issues
-    )
+    assert any(issue.severity == ValidationSeverity.ERROR for issue in response.issues)
     assert isinstance(dispatcher.events[-1], ValidationCompletedEvent)
 
 

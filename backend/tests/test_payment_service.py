@@ -3,7 +3,7 @@
 import uuid
 from datetime import date
 from decimal import Decimal
-from typing import Self
+from typing import Any, Self
 
 import pytest
 
@@ -111,6 +111,21 @@ class FakePaymentRepository:
         return self.existing_paid
 
 
+class FakeLedgerRepository:
+    """Fake ledger repository for payment deletion tests."""
+
+    def __init__(self, *, has_entries: bool = False) -> None:
+        self.has_entries = has_entries
+
+    async def exists_for_source(
+        self,
+        source_entity: str,
+        source_entity_id: uuid.UUID,
+    ) -> bool:
+        _ = (source_entity, source_entity_id)
+        return self.has_entries
+
+
 class FakePaymentUnitOfWork:
     """Fake Unit of Work for payment service tests."""
 
@@ -119,10 +134,12 @@ class FakePaymentUnitOfWork:
         *,
         invoice_repository: FakeInvoiceRepository,
         payment_repository: FakePaymentRepository,
+        ledger_repository: FakeLedgerRepository | None = None,
     ) -> None:
         """Initialize fake repositories."""
         self.sales_invoices: PaymentInvoiceRepository = invoice_repository
         self.payments: PaymentPersistenceRepository = payment_repository
+        self.ledgers = ledger_repository
         self.committed = False
         self.rolled_back = False
 
@@ -166,7 +183,11 @@ class FakeAccountingKernel:
         """Initialize captured calls."""
         self.payment_ids: list[uuid.UUID] = []
 
-    async def record_customer_payment(self, payment_id: uuid.UUID) -> object:
+    async def record_customer_payment(
+        self,
+        payment_id: uuid.UUID,
+        uow: Any = None,
+    ) -> object:
         """Capture payment posting call."""
         self.payment_ids.append(payment_id)
         return object()
@@ -384,6 +405,34 @@ async def test_delete_payment() -> None:
     assert payment.is_deleted is True
     assert invoice.status == InvoiceStatus.ISSUED
     assert isinstance(dispatcher.events[0], PaymentDeletedEvent)
+
+
+async def test_delete_payment_rejects_posted_payment() -> None:
+    """Service rejects deleting a payment that has posted ledger entries."""
+    invoice = build_invoice(status=InvoiceStatus.PARTIALLY_PAID)
+    payment = Payment(
+        id=uuid.uuid4(),
+        invoice_id=invoice.id,
+        payment_date=date(2026, 4, 10),
+        amount=Decimal("500.00"),
+        payment_method=PaymentMethod.UPI,
+    )
+    dispatcher = CapturingEventDispatcher()
+    uow = FakePaymentUnitOfWork(
+        invoice_repository=FakeInvoiceRepository(invoice),
+        payment_repository=FakePaymentRepository(
+            existing_paid=Decimal("500.00"),
+            payment=payment,
+        ),
+        ledger_repository=FakeLedgerRepository(has_entries=True),
+    )
+    service = build_service(uow, dispatcher)
+
+    with pytest.raises(SalesPaymentValidationException) as exc_info:
+        await service.delete_payment(payment.id)
+
+    assert "posted ledger entries" in str(exc_info.value)
+    assert not payment.is_deleted
 
 
 async def test_rollback_on_create_failure() -> None:

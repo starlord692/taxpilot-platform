@@ -3,14 +3,29 @@
 import uuid
 from datetime import date
 from decimal import Decimal
-from typing import Self, cast
+from typing import Any, Self, cast
 
 import pytest
 
-import app.modules.business.models  # noqa: F401
 import app.modules.identity.models  # noqa: F401
 from app.common.events import Event, EventDispatcher
 from app.common.pagination import Page, PaginationParams
+from app.modules.business.models import (
+    Business,
+    BusinessAddress,
+    BusinessStatus,
+    BusinessTaxProfile,
+    BusinessType,
+)
+from app.modules.gst.jurisdictions import (
+    InvalidStateCodeException,
+    LegacyStateCodeObsoleteException,
+    OffshoreTerritoryUnsupportedException,
+)
+from app.modules.gst.services.pos_resolution_service import (
+    ContradictoryPOSException,
+    TransactionClassificationIndeterminateException,
+)
 from app.modules.purchases.events import (
     PurchaseApprovedEvent,
     PurchaseCancelledEvent,
@@ -326,6 +341,51 @@ class FakePurchaseLineRepository:
         line.mark_deleted()
 
 
+class FakeBusinessRepository:
+    """Fake business repository for purchase service tests."""
+
+    def __init__(
+        self,
+        businesses: list[Business] | None = None,
+        *,
+        auto_create: bool = True,
+    ) -> None:
+        """Initialize fake repository."""
+        self.businesses: dict[uuid.UUID, Business] = {
+            b.id: b for b in (businesses or [])
+        }
+        self.auto_create = auto_create
+
+    async def get_by_id(self, business_id: uuid.UUID) -> Business | None:
+        """Return business by id."""
+        if business_id in self.businesses:
+            return self.businesses[business_id]
+        if self.auto_create:
+            business = Business(
+                id=business_id,
+                legal_name="TaxPilot Client Enterprise",
+                business_type=BusinessType.PRIVATE_LIMITED,
+                status=BusinessStatus.ACTIVE,
+                tax_profile=BusinessTaxProfile(
+                    business_id=business_id,
+                    gstin="29ABCDE1234F1Z5",
+                    financial_year_start=date(2026, 4, 1),
+                    gst_registered=True,
+                ),
+                address=BusinessAddress(
+                    business_id=business_id,
+                    address_line_1="100 Feet Rd",
+                    city="Bengaluru",
+                    state="29",
+                    country="IN",
+                    postal_code="560038",
+                ),
+            )
+            self.businesses[business_id] = business
+            return business
+        return None
+
+
 class FakePurchaseUnitOfWork:
     """Fake Unit of Work for purchase service tests."""
 
@@ -334,6 +394,7 @@ class FakePurchaseUnitOfWork:
         *,
         supplier_repository: FakeSupplierRepository,
         purchase_repository: FakePurchaseRepository | None = None,
+        business_repository: FakeBusinessRepository | None = None,
     ) -> None:
         """Initialize fake repositories."""
         self.suppliers: SupplierPersistenceRepository | PurchaseSupplierRepository = (
@@ -345,6 +406,7 @@ class FakePurchaseUnitOfWork:
         self.purchase_invoice_lines: PurchaseLinePersistenceRepository = (
             FakePurchaseLineRepository()
         )
+        self.businesses = business_repository or FakeBusinessRepository()
         self.committed = False
         self.rolled_back = False
 
@@ -375,12 +437,20 @@ class FakePurchaseAccountingKernel:
         self.purchase_ids: list[uuid.UUID] = []
         self.payment_purchase_ids: list[uuid.UUID] = []
 
-    async def record_purchase_invoice(self, purchase_id: uuid.UUID) -> object:
+    async def record_purchase_invoice(
+        self,
+        purchase_id: uuid.UUID,
+        uow: Any = None,
+    ) -> object:
         """Capture purchase invoice posting."""
         self.purchase_ids.append(purchase_id)
         return object()
 
-    async def record_supplier_payment(self, purchase_id: uuid.UUID) -> object:
+    async def record_supplier_payment(
+        self,
+        purchase_id: uuid.UUID,
+        uow: Any = None,
+    ) -> object:
         """Capture supplier payment posting."""
         self.payment_purchase_ids.append(purchase_id)
         return object()
@@ -393,7 +463,13 @@ class FakePurchaseStockEngine:
         """Initialize captured inventory calls."""
         self.purchases: list[PurchaseInvoice] = []
 
-    async def receive_purchase(self, purchase_invoice: PurchaseInvoice) -> object:
+    async def receive_purchase(
+        self,
+        purchase_invoice: PurchaseInvoice,
+        *,
+        warehouse_id: uuid.UUID | None = None,
+        uow: Any = None,
+    ) -> object:
         """Capture purchase receipt call."""
         self.purchases.append(purchase_invoice)
         return object()
@@ -530,9 +606,7 @@ async def test_supplier_creation_and_event() -> None:
 async def test_duplicate_supplier_detection() -> None:
     """Supplier service rejects duplicate supplier names and GSTIN values."""
     supplier = build_supplier()
-    uow = FakePurchaseUnitOfWork(
-        supplier_repository=FakeSupplierRepository([supplier])
-    )
+    uow = FakePurchaseUnitOfWork(supplier_repository=FakeSupplierRepository([supplier]))
     service = build_supplier_service(uow, CapturingEventDispatcher())
 
     with pytest.raises(DuplicateSupplierException):
@@ -587,9 +661,7 @@ async def test_purchase_creation_number_generation_totals_and_event() -> None:
     """Purchase service creates purchases, numbers, and totals."""
     supplier = build_supplier()
     dispatcher = CapturingEventDispatcher()
-    uow = FakePurchaseUnitOfWork(
-        supplier_repository=FakeSupplierRepository([supplier])
-    )
+    uow = FakePurchaseUnitOfWork(supplier_repository=FakeSupplierRepository([supplier]))
     service = build_purchase_service(uow, dispatcher)
 
     response = await service.create_purchase(
@@ -691,8 +763,8 @@ async def test_purchase_status_transitions_and_events() -> None:
 
 
 async def test_purchase_cancellation_rules() -> None:
-    """Purchase service allows cancellation before paid only."""
-    cancellable = build_purchase(status=PurchaseStatus.RECEIVED)
+    """Purchase service allows cancellation of DRAFT only and rejects non-drafts."""
+    cancellable = build_purchase(status=PurchaseStatus.DRAFT)
     dispatcher = CapturingEventDispatcher()
     uow = FakePurchaseUnitOfWork(
         supplier_repository=FakeSupplierRepository(),
@@ -704,14 +776,23 @@ async def test_purchase_cancellation_rules() -> None:
     assert response.status == PurchaseStatus.CANCELLED
     assert isinstance(dispatcher.events[0], PurchaseCancelledEvent)
 
-    paid = build_purchase(status=PurchaseStatus.PAID)
-    paid_uow = FakePurchaseUnitOfWork(
-        supplier_repository=FakeSupplierRepository(),
-        purchase_repository=FakePurchaseRepository([paid]),
-    )
-    paid_service = build_purchase_service(paid_uow, CapturingEventDispatcher())
-    with pytest.raises(InvalidPurchaseStatusException):
-        await paid_service.cancel_purchase(paid.id)
+    for blocked_status in (
+        PurchaseStatus.APPROVED,
+        PurchaseStatus.RECEIVED,
+        PurchaseStatus.PAID,
+    ):
+        blocked = build_purchase(status=blocked_status)
+        blocked_uow = FakePurchaseUnitOfWork(
+            supplier_repository=FakeSupplierRepository(),
+            purchase_repository=FakePurchaseRepository([blocked]),
+        )
+        blocked_service = build_purchase_service(
+            blocked_uow,
+            CapturingEventDispatcher(),
+        )
+        with pytest.raises(InvalidPurchaseStatusException):
+            await blocked_service.cancel_purchase(blocked.id)
+        assert blocked.status == blocked_status
 
 
 async def test_purchase_validation_failures() -> None:
@@ -759,3 +840,444 @@ async def test_purchase_service_rolls_back_on_failure() -> None:
 
     assert uow.committed is False
     assert uow.rolled_back is True
+
+
+async def test_inter_state_purchase_invoice_calculates_igst() -> None:
+    """Inter-state purchase invoice calculates 100% IGST with zero CGST/SGST."""
+    supplier = Supplier(
+        id=uuid.uuid4(),
+        business_id=uuid.uuid4(),
+        supplier_code="SUP-0002",
+        name="Maharashtra Vendor",
+        email="billing@mhavendor.com",
+        gstin="27ABCDE1234F1Z5",
+        is_active=True,
+    )
+    dispatcher = CapturingEventDispatcher()
+    uow = FakePurchaseUnitOfWork(supplier_repository=FakeSupplierRepository([supplier]))
+    service = build_purchase_service(uow, dispatcher)
+
+    request = build_purchase_request(supplier.id)
+    response = await service.create_purchase(request, business_id=supplier.business_id)
+
+    assert response.subtotal == Decimal("1000.00")
+    assert response.tax_amount == Decimal("180.00")
+    assert response.total_amount == Decimal("1180.00")
+    assert len(response.lines) == 1
+    line = response.lines[0]
+    assert line.igst_amount == Decimal("180.00")
+    assert line.cgst_amount == Decimal("0.00")
+    assert line.sgst_amount == Decimal("0.00")
+
+
+async def test_inter_state_purchase_invoice_update_recalculates_igst() -> None:
+    """Updating lines on an inter-state purchase recalculates line IGST."""
+    supplier = Supplier(
+        id=uuid.uuid4(),
+        business_id=uuid.uuid4(),
+        supplier_code="SUP-0002",
+        name="Maharashtra Vendor",
+        email="billing@mhavendor.com",
+        gstin="27ABCDE1234F1Z5",
+        is_active=True,
+    )
+    purchase = build_purchase(supplier_id=supplier.id, business_id=supplier.business_id)
+    dispatcher = CapturingEventDispatcher()
+    uow = FakePurchaseUnitOfWork(
+        supplier_repository=FakeSupplierRepository([supplier]),
+        purchase_repository=FakePurchaseRepository([purchase]),
+    )
+    service = build_purchase_service(uow, dispatcher)
+
+    update_request = PurchaseInvoiceUpdate(
+        lines=[
+            PurchaseInvoiceLineUpdate(
+                description="Server rack",
+                quantity=Decimal("1.00"),
+                unit_cost=Decimal("2000.00"),
+                tax_rate=Decimal("18.00"),
+                line_total=Decimal("0.00"),
+            )
+        ]
+    )
+    response = await service.update_purchase(purchase.id, update_request)
+
+    assert response.subtotal == Decimal("2000.00")
+    assert response.tax_amount == Decimal("360.00")
+    assert response.total_amount == Decimal("2360.00")
+    assert len(response.lines) == 1
+    line = response.lines[0]
+    assert line.igst_amount == Decimal("360.00")
+    assert line.cgst_amount == Decimal("0.00")
+    assert line.sgst_amount == Decimal("0.00")
+
+
+async def test_intra_state_purchase_invoice_retains_cgst_and_sgst() -> None:
+    """Intra-state purchase invoice calculates 50/50 CGST and SGST split."""
+    supplier = build_supplier()  # gstin="29ABCDE1234F1Z5", business in KA
+    dispatcher = CapturingEventDispatcher()
+    uow = FakePurchaseUnitOfWork(supplier_repository=FakeSupplierRepository([supplier]))
+    service = build_purchase_service(uow, dispatcher)
+
+    request = build_purchase_request(supplier.id)
+    response = await service.create_purchase(request, business_id=supplier.business_id)
+
+    assert response.subtotal == Decimal("1000.00")
+    assert response.tax_amount == Decimal("180.00")
+    assert response.total_amount == Decimal("1180.00")
+    assert len(response.lines) == 1
+    line = response.lines[0]
+    assert line.cgst_amount == Decimal("90.00")
+    assert line.sgst_amount == Decimal("90.00")
+    assert line.igst_amount == Decimal("0.00")
+
+
+async def test_purchase_missing_recipient_business_raises_error() -> None:
+    """Purchase creation fails when recipient business is not found."""
+    supplier = build_supplier()
+    uow = FakePurchaseUnitOfWork(
+        supplier_repository=FakeSupplierRepository([supplier]),
+        business_repository=FakeBusinessRepository(auto_create=False),
+    )
+    service = build_purchase_service(uow, CapturingEventDispatcher())
+
+    with pytest.raises(TransactionClassificationIndeterminateException):
+        await service.create_purchase(
+            build_purchase_request(supplier.id),
+            business_id=supplier.business_id,
+        )
+
+
+async def test_purchase_missing_recipient_location_evidence_raises_error() -> None:
+    """Purchase creation fails when business lacks tax profile and address state."""
+    supplier = build_supplier()
+    empty_business = Business(
+        id=supplier.business_id,
+        legal_name="Locationless Business",
+        business_type=BusinessType.PRIVATE_LIMITED,
+        status=BusinessStatus.ACTIVE,
+    )
+    uow = FakePurchaseUnitOfWork(
+        supplier_repository=FakeSupplierRepository([supplier]),
+        business_repository=FakeBusinessRepository(
+            businesses=[empty_business], auto_create=False
+        ),
+    )
+    service = build_purchase_service(uow, CapturingEventDispatcher())
+
+    with pytest.raises(TransactionClassificationIndeterminateException):
+        await service.create_purchase(
+            build_purchase_request(supplier.id),
+            business_id=supplier.business_id,
+        )
+
+
+async def test_purchase_missing_supplier_location_evidence_raises_error() -> None:
+    """Purchase creation fails when supplier lacks both GSTIN and address state."""
+    supplier = Supplier(
+        id=uuid.uuid4(),
+        business_id=uuid.uuid4(),
+        supplier_code="SUP-UNREG",
+        name="Unregistered Supplier",
+        email="unreg@example.com",
+        gstin=None,
+        address=None,
+        is_active=True,
+    )
+    uow = FakePurchaseUnitOfWork(supplier_repository=FakeSupplierRepository([supplier]))
+    service = build_purchase_service(uow, CapturingEventDispatcher())
+
+    with pytest.raises(TransactionClassificationIndeterminateException):
+        await service.create_purchase(
+            build_purchase_request(supplier.id),
+            business_id=supplier.business_id,
+        )
+
+
+async def test_purchase_invalid_supplier_state_code_raises_error() -> None:
+    """Purchase creation fails when supplier GSTIN has an invalid state code."""
+    supplier = Supplier(
+        id=uuid.uuid4(),
+        business_id=uuid.uuid4(),
+        supplier_code="SUP-INVALID",
+        name="Invalid State Supplier",
+        email="invalid@example.com",
+        gstin="99ABCDE1234F1Z5",
+        is_active=True,
+    )
+    uow = FakePurchaseUnitOfWork(supplier_repository=FakeSupplierRepository([supplier]))
+    service = build_purchase_service(uow, CapturingEventDispatcher())
+
+    with pytest.raises(InvalidStateCodeException):
+        await service.create_purchase(
+            build_purchase_request(supplier.id),
+            business_id=supplier.business_id,
+        )
+
+
+async def test_purchase_invalid_recipient_state_code_raises_error() -> None:
+    """Purchase creation fails when recipient business has an invalid state code."""
+    supplier = build_supplier()
+    invalid_business = Business(
+        id=supplier.business_id,
+        legal_name="Invalid State Business",
+        business_type=BusinessType.PRIVATE_LIMITED,
+        status=BusinessStatus.ACTIVE,
+        address=BusinessAddress(
+            business_id=supplier.business_id,
+            address_line_1="Nowhere",
+            city="Fantasy",
+            state="99",
+            country="IN",
+            postal_code="999999",
+        ),
+    )
+    uow = FakePurchaseUnitOfWork(
+        supplier_repository=FakeSupplierRepository([supplier]),
+        business_repository=FakeBusinessRepository(
+            businesses=[invalid_business], auto_create=False
+        ),
+    )
+    service = build_purchase_service(uow, CapturingEventDispatcher())
+
+    with pytest.raises(InvalidStateCodeException):
+        await service.create_purchase(
+            build_purchase_request(supplier.id),
+            business_id=supplier.business_id,
+        )
+
+
+async def test_purchase_contradictory_igst_on_intra_state_raises_error() -> None:
+    """Purchase creation fails when request line asserts IGST on intra-state supply."""
+    supplier = build_supplier()  # gstin="29ABCDE1234F1Z5" in KA, business in KA
+    uow = FakePurchaseUnitOfWork(supplier_repository=FakeSupplierRepository([supplier]))
+    service = build_purchase_service(uow, CapturingEventDispatcher())
+
+    contradictory_request = PurchaseInvoiceCreate(
+        supplier_id=supplier.id,
+        invoice_number="SUP-INV-CONTRA-01",
+        invoice_date=date(2026, 6, 1),
+        due_date=date(2026, 6, 30),
+        subtotal=Decimal("1000.00"),
+        tax_amount=Decimal("180.00"),
+        total_amount=Decimal("1180.00"),
+        lines=[
+            PurchaseInvoiceLineCreate(
+                description="Laptops",
+                quantity=Decimal("1.00"),
+                unit_cost=Decimal("1000.00"),
+                tax_rate=Decimal("18.00"),
+                cgst_amount=Decimal("0.00"),
+                sgst_amount=Decimal("0.00"),
+                igst_amount=Decimal("180.00"),
+                line_total=Decimal("1180.00"),
+            )
+        ],
+    )
+
+    with pytest.raises(ContradictoryPOSException):
+        await service.create_purchase(
+            contradictory_request,
+            business_id=supplier.business_id,
+        )
+
+
+async def test_purchase_contradictory_cgst_on_inter_state_raises_error() -> None:
+    """Purchase creation fails when request line asserts CGST on inter-state supply."""
+    supplier = Supplier(
+        id=uuid.uuid4(),
+        business_id=uuid.uuid4(),
+        supplier_code="SUP-MH",
+        name="Maharashtra Vendor",
+        email="mh@example.com",
+        gstin="27ABCDE1234F1Z5",
+        is_active=True,
+    )
+    uow = FakePurchaseUnitOfWork(supplier_repository=FakeSupplierRepository([supplier]))
+    service = build_purchase_service(uow, CapturingEventDispatcher())
+
+    contradictory_request = PurchaseInvoiceCreate(
+        supplier_id=supplier.id,
+        invoice_number="SUP-INV-CONTRA-02",
+        invoice_date=date(2026, 6, 1),
+        due_date=date(2026, 6, 30),
+        subtotal=Decimal("1000.00"),
+        tax_amount=Decimal("180.00"),
+        total_amount=Decimal("1180.00"),
+        lines=[
+            PurchaseInvoiceLineCreate(
+                description="Laptops",
+                quantity=Decimal("1.00"),
+                unit_cost=Decimal("1000.00"),
+                tax_rate=Decimal("18.00"),
+                cgst_amount=Decimal("90.00"),
+                sgst_amount=Decimal("90.00"),
+                igst_amount=Decimal("0.00"),
+                line_total=Decimal("1180.00"),
+            )
+        ],
+    )
+
+    with pytest.raises(ContradictoryPOSException):
+        await service.create_purchase(
+            contradictory_request,
+            business_id=supplier.business_id,
+        )
+
+
+async def test_purchase_unsupported_offshore_territory_raises_error() -> None:
+    """Purchase creation fails when supplier has offshore territory Code 97."""
+    supplier = Supplier(
+        id=uuid.uuid4(),
+        business_id=uuid.uuid4(),
+        supplier_code="SUP-OFFSHORE",
+        name="Offshore Supplier",
+        email="offshore@example.com",
+        gstin="97ABCDE1234F1Z5",
+        is_active=True,
+    )
+    uow = FakePurchaseUnitOfWork(supplier_repository=FakeSupplierRepository([supplier]))
+    service = build_purchase_service(uow, CapturingEventDispatcher())
+
+    with pytest.raises(OffshoreTerritoryUnsupportedException):
+        await service.create_purchase(
+            build_purchase_request(supplier.id),
+            business_id=supplier.business_id,
+        )
+
+
+async def test_purchase_unsupported_legacy_state_code_raises_error() -> None:
+    """Purchase creation fails when supplier has deprecated state code 25."""
+    supplier = Supplier(
+        id=uuid.uuid4(),
+        business_id=uuid.uuid4(),
+        supplier_code="SUP-LEGACY",
+        name="Legacy Daman Supplier",
+        email="legacy@example.com",
+        gstin="25ABCDE1234F1Z5",
+        is_active=True,
+    )
+    uow = FakePurchaseUnitOfWork(supplier_repository=FakeSupplierRepository([supplier]))
+    service = build_purchase_service(uow, CapturingEventDispatcher())
+
+    with pytest.raises(LegacyStateCodeObsoleteException):
+        await service.create_purchase(
+            build_purchase_request(supplier.id),
+            business_id=supplier.business_id,
+        )
+
+
+async def test_purchase_unsupported_utgst_territory_raises_error() -> None:
+    """Purchase creation fails for intra-state supply in UT without legislature."""
+    supplier = Supplier(
+        id=uuid.uuid4(),
+        business_id=uuid.uuid4(),
+        supplier_code="SUP-CHANDIGARH",
+        name="Chandigarh Supplier",
+        email="chd@example.com",
+        gstin="04ABCDE1234F1Z5",
+        is_active=True,
+    )
+    chd_business = Business(
+        id=supplier.business_id,
+        legal_name="Chandigarh Branch",
+        business_type=BusinessType.PRIVATE_LIMITED,
+        status=BusinessStatus.ACTIVE,
+        tax_profile=BusinessTaxProfile(
+            business_id=supplier.business_id,
+            gstin="04XYZAB1234C1Z1",
+            financial_year_start=date(2026, 4, 1),
+            gst_registered=True,
+        ),
+    )
+    uow = FakePurchaseUnitOfWork(
+        supplier_repository=FakeSupplierRepository([supplier]),
+        business_repository=FakeBusinessRepository(
+            businesses=[chd_business], auto_create=False
+        ),
+    )
+    service = build_purchase_service(uow, CapturingEventDispatcher())
+
+    with pytest.raises(PurchaseValidationException) as exc_info:
+        await service.create_purchase(
+            build_purchase_request(supplier.id),
+            business_id=supplier.business_id,
+        )
+
+    assert "UTGST" in exc_info.value.message
+
+
+async def test_purchase_uow_lacking_business_repo_raises_error() -> None:
+    """Purchase creation fails when unit of work lacks business repository."""
+    supplier = build_supplier()
+    uow = FakePurchaseUnitOfWork(supplier_repository=FakeSupplierRepository([supplier]))
+    del uow.businesses  # Simulate UOW lacking businesses attribute
+    service = build_purchase_service(uow, CapturingEventDispatcher())
+
+    with pytest.raises(TransactionClassificationIndeterminateException):
+        await service.create_purchase(
+            build_purchase_request(supplier.id),
+            business_id=supplier.business_id,
+        )
+
+
+async def test_purchase_creation_eager_loads_and_serializes_without_detached_error() -> None:
+    """Purchase creation reloads through repository and serializes response within active UOW."""
+    supplier = build_supplier()
+    supplier_repo = FakeSupplierRepository([supplier])
+
+    class ReloadingFakePurchaseRepository(FakePurchaseRepository):
+        def __init__(self) -> None:
+            super().__init__()
+            self.reload_called = False
+
+        async def get_by_id(self, purchase_id: uuid.UUID) -> PurchaseInvoice | None:
+            self.reload_called = True
+            invoice = await super().get_by_id(purchase_id)
+            if invoice is not None:
+                invoice.supplier = supplier
+            return invoice
+
+    purchase_repo = ReloadingFakePurchaseRepository()
+    uow = FakePurchaseUnitOfWork(
+        supplier_repository=supplier_repo,
+        purchase_repository=purchase_repo,
+    )
+    service = build_purchase_service(uow, CapturingEventDispatcher())
+
+    response = await service.create_purchase(
+        build_purchase_request(supplier.id),
+        business_id=supplier.business_id,
+    )
+
+    assert purchase_repo.reload_called is True
+    assert response.supplier is not None
+    assert response.supplier.id == supplier.id
+    assert response.supplier.name == supplier.name
+    assert len(response.lines) == 1
+    dumped = response.model_dump()
+    assert dumped["supplier"]["id"] == supplier.id
+    assert dumped["status"] == PurchaseStatus.DRAFT.value
+    assert uow.committed is True
+
+
+async def test_purchase_creation_does_not_create_duplicate_on_failure() -> None:
+    """Failed purchase creation does not commit or leave partial records."""
+    supplier = build_supplier()
+    uow = FakePurchaseUnitOfWork(
+        supplier_repository=FakeSupplierRepository([supplier]),
+        purchase_repository=FakePurchaseRepository(fail_create=True),
+    )
+    service = build_purchase_service(uow, CapturingEventDispatcher())
+
+    with pytest.raises(RuntimeError, match="purchase create failed"):
+        await service.create_purchase(
+            build_purchase_request(supplier.id),
+            business_id=supplier.business_id,
+        )
+
+    assert uow.committed is False
+    assert uow.rolled_back is True
+    assert len(uow.purchase_invoices.purchases) == 0
+
+

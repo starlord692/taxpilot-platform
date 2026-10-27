@@ -9,9 +9,13 @@ from app.modules.gst.compliance.schemas.reports import (
     GSTR3BReport,
     GSTReportPeriod,
     GSTReportRequest,
+    GSTRReconciliationDiscrepancy,
+    GSTRReconciliationReport,
+    GSTRReconciliationStatus,
     GSTSummaryReport,
     HSNReportLine,
     ITCReport,
+    ReconciliationDataSource,
 )
 
 __all__ = [
@@ -24,6 +28,12 @@ __all__ = [
     "GSTSummaryReport",
     "GSTR1Report",
     "GSTR3BReport",
+    "GSTRReconciliationDiscrepancy",
+    "GSTRReconciliationReport",
+    "GSTRReconciliationStatus",
     "HSNReportLine",
     "ITCReport",
+    "ReconciliationDataSource",
 ]
+
+

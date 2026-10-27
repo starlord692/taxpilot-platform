@@ -61,6 +61,10 @@ class BusinessLifecycleRepository(Protocol):
         """Return a business by business code."""
         ...
 
+    async def get_by_legal_name(self, legal_name: str) -> Business | None:
+        """Return a business by legal name."""
+        ...
+
     async def list_by_user(
         self,
         user_id: uuid.UUID,
@@ -199,8 +203,7 @@ class BusinessService:
                 )
             )
             await uow.commit()
-
-        return BusinessResponse.model_validate(business)
+            return BusinessResponse.model_validate(business)
 
     async def list_businesses(
         self,
@@ -218,13 +221,15 @@ class BusinessService:
                 search=search,
                 sort=sort,
             )
-
-        return Page.create(
-            items=[
+            items = [
                 BusinessSummaryResponse.model_validate(business)
                 for business in page.items
-            ],
-            total=page.meta.total,
+            ]
+            total = page.meta.total
+
+        return Page.create(
+            items=items,
+            total=total,
             params=pagination,
         )
 
@@ -237,8 +242,7 @@ class BusinessService:
         async with self._unit_of_work_factory() as uow:
             business = await self._get_existing_business_by_code(uow, business_code)
             await self._ensure_member(uow, business.id, user_id)
-
-        return BusinessResponse.model_validate(business)
+            return BusinessResponse.model_validate(business)
 
     async def update_business(
         self,
@@ -261,8 +265,7 @@ class BusinessService:
                 BusinessUpdatedEvent(business_id=business.id)
             )
             await uow.commit()
-
-        return BusinessResponse.model_validate(business)
+            return BusinessResponse.model_validate(business)
 
     async def update_business_by_code(
         self,
@@ -287,8 +290,7 @@ class BusinessService:
                 BusinessUpdatedEvent(business_id=business.id)
             )
             await uow.commit()
-
-        return BusinessResponse.model_validate(business)
+            return BusinessResponse.model_validate(business)
 
     async def archive_business(self, business_id: uuid.UUID) -> BusinessResponse:
         """Archive a business."""
@@ -299,8 +301,7 @@ class BusinessService:
                 BusinessArchivedEvent(business_id=business.id)
             )
             await uow.commit()
-
-        return BusinessResponse.model_validate(business)
+            return BusinessResponse.model_validate(business)
 
     async def archive_business_by_code(
         self,
@@ -326,8 +327,7 @@ class BusinessService:
                 BusinessRestoredEvent(business_id=business.id)
             )
             await uow.commit()
-
-        return BusinessResponse.model_validate(business)
+            return BusinessResponse.model_validate(business)
 
     def _ensure_settings(
         self,

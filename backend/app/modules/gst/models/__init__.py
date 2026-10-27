@@ -9,6 +9,7 @@ from app.modules.gst.models.enums import (
 from app.modules.gst.models.registration import GSTRegistration
 from app.modules.gst.models.settings import GSTSettings
 from app.modules.gst.models.tax_rate import GSTTaxRate
+from app.modules.gst.models.verification import GSTINVerification
 
 __all__ = [
     "GSTRoundingMethod",
@@ -17,6 +18,7 @@ __all__ = [
     "GSTSettings",
     "GSTTaxMode",
     "GSTTaxRate",
+    "GSTINVerification",
     "HSNCode",
     "SACCode",
 ]

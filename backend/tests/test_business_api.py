@@ -369,6 +369,7 @@ def test_openapi_documents_business_routes() -> None:
     assert schema["paths"]["/api/v1/businesses/"]["get"]["summary"] == (
         "List businesses"
     )
-    assert schema["paths"]["/api/v1/businesses/{business_code}"]["get"][
-        "summary"
-    ] == "Get business"
+    assert (
+        schema["paths"]["/api/v1/businesses/{business_code}"]["get"]["summary"]
+        == "Get business"
+    )

@@ -369,9 +369,7 @@ async def test_mock_provider_irn_generation_and_qr() -> None:
     """Service generates IRN and QR data through the mock provider."""
     _business_id, invoice, uow, service, dispatcher = build_service_state()
 
-    result = await service.generate_irn(
-        EInvoiceGenerateRequest(invoice_id=invoice.id)
-    )
+    result = await service.generate_irn(EInvoiceGenerateRequest(invoice_id=invoice.id))
 
     assert result.invoice_id == invoice.id
     assert result.irn

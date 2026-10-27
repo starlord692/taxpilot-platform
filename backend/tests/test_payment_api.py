@@ -13,14 +13,16 @@ from app.modules.sales.api.dependencies import (
     get_payment_service,
     get_sales_unit_of_work,
 )
+from app.modules.sales.exceptions import SalesPaymentValidationException
 from app.modules.sales.models import InvoiceStatus, Payment, PaymentMethod, SalesInvoice
 from app.modules.sales.schemas import PaymentCreateRequest, PaymentResponse
 
-HTTP_CREATED = 201
-HTTP_FORBIDDEN = 403
-HTTP_NO_CONTENT = 204
 HTTP_OK = 200
+HTTP_CREATED = 201
+HTTP_NO_CONTENT = 204
+HTTP_BAD_REQUEST = 400
 HTTP_UNAUTHORIZED = 401
+HTTP_FORBIDDEN = 403
 
 
 class FakeMembershipRepository:
@@ -96,12 +98,18 @@ class FakeSalesUnitOfWork:
 class FakePaymentService:
     """Fake payment service for API tests."""
 
-    def __init__(self, payment: PaymentResponse) -> None:
+    def __init__(
+        self,
+        payment: PaymentResponse,
+        *,
+        delete_exception: Exception | None = None,
+    ) -> None:
         """Initialize with payment response."""
         self.payment = payment
         self.recorded_request: PaymentCreateRequest | None = None
         self.updated_request: PaymentCreateRequest | None = None
         self.deleted_payment_id: uuid.UUID | None = None
+        self.delete_exception = delete_exception
 
     async def record_payment(self, request: PaymentCreateRequest) -> PaymentResponse:
         """Return recorded payment."""
@@ -119,7 +127,9 @@ class FakePaymentService:
         return self.payment.model_copy(update={"amount": request.amount})
 
     async def delete_payment(self, payment_id: uuid.UUID) -> None:
-        """Record deleted payment id."""
+        """Record deleted payment id or raise configured exception."""
+        if self.delete_exception is not None:
+            raise self.delete_exception
         self.deleted_payment_id = payment_id
 
 
@@ -176,6 +186,7 @@ def build_client(
     *,
     authenticated: bool = True,
     is_member: bool = True,
+    delete_exception: Exception | None = None,
 ) -> tuple[TestClient, FakeSalesUnitOfWork, FakePaymentService, IdentityUser]:
     """Build a test client with payment dependency overrides."""
     app = create_app(initialize_resources=False)
@@ -186,7 +197,10 @@ def build_client(
         payment=payment,
         is_member=is_member,
     )
-    service = FakePaymentService(PaymentResponse.model_validate(payment))
+    service = FakePaymentService(
+        PaymentResponse.model_validate(payment),
+        delete_exception=delete_exception,
+    )
     user = build_user()
 
     app.dependency_overrides[get_sales_unit_of_work] = lambda: uow
@@ -249,6 +263,22 @@ def test_delete_payment_endpoint() -> None:
     assert service.deleted_payment_id == uow.payments.payment.id
 
 
+def test_delete_payment_rejects_posted_payment() -> None:
+    """Deleting a payment with posted ledger entries returns 400 Bad Request."""
+    client, uow, _service, _user = build_client(
+        delete_exception=SalesPaymentValidationException(
+            "Cannot delete payment with posted ledger entries",
+            details={"payment_id": "test"},
+        )
+    )
+
+    with client:
+        response = client.delete(f"/api/v1/sales/payments/{uow.payments.payment.id}")
+
+    assert response.status_code == HTTP_BAD_REQUEST
+    assert response.json()["data"]["code"] == "sales.payment_validation_failed"
+
+
 def test_unauthorized_payment_access() -> None:
     """Payment endpoints require authentication."""
     client, uow, _service, _user = build_client(authenticated=False)
@@ -283,6 +313,7 @@ def test_openapi_documents_payment_routes() -> None:
     assert schema["paths"]["/api/v1/sales/payments"]["post"]["summary"] == (
         "Record payment"
     )
-    assert schema["paths"]["/api/v1/sales/payments/{payment_id}"]["delete"][
-        "summary"
-    ] == "Delete payment"
+    assert (
+        schema["paths"]["/api/v1/sales/payments/{payment_id}"]["delete"]["summary"]
+        == "Delete payment"
+    )

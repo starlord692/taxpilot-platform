@@ -8,6 +8,7 @@ from app.common.events import Event, EventDispatcher
 
 pytestmark = pytest.mark.asyncio
 
+
 @dataclass(frozen=True)
 class FrameworkEvent(Event):
     """Test event used by dispatcher tests."""

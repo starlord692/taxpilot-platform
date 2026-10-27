@@ -7,6 +7,8 @@ from typing import Self, cast
 
 import pytest
 
+import app.modules.catalog.models  # noqa: F401
+import app.modules.inventory.models  # noqa: F401
 from app.common.events import Event, EventDispatcher
 from app.modules.accounting.balances.events import AccountBalanceUpdatedEvent
 from app.modules.accounting.balances.models import AccountBalance
@@ -27,7 +29,11 @@ from app.modules.accounting.ledger.events import LedgerPostedEvent
 from app.modules.accounting.ledger.exceptions import LedgerPostingFailedException
 from app.modules.accounting.ledger.models import GeneralLedgerEntry
 from app.modules.expenses.models import Expense, ExpenseCategory, ExpenseStatus
-from app.modules.purchases.models import PurchaseInvoice, PurchaseStatus
+from app.modules.purchases.models import (
+    PurchaseInvoice,
+    PurchaseInvoiceLine,
+    PurchaseStatus,
+)
 from app.modules.sales.models import InvoiceStatus, Payment, PaymentMethod, SalesInvoice
 
 pytestmark = pytest.mark.asyncio
@@ -229,9 +235,7 @@ class FakeAccountingUnitOfWork:
         self.expenses = FakeExpenseRepository(expense)
         self.purchase_invoices = FakePurchaseRepository(purchase)
         business_id = self._get_business_id(invoice, expense, purchase)
-        self.chart_of_accounts = FakeChartRepository(
-            build_accounts(business_id)
-        )
+        self.chart_of_accounts = FakeChartRepository(build_accounts(business_id))
         self.journals = FakeJournalRepository()
         self.ledgers = FakeLedgerRepository(fail_create=fail_ledger)
         self.account_balances = FakeBalanceRepository()
@@ -418,12 +422,10 @@ async def test_invoice_posting_publishes_events() -> None:
     assert any(isinstance(event, JournalPostedEvent) for event in dispatcher.events)
     assert any(isinstance(event, LedgerPostedEvent) for event in dispatcher.events)
     assert any(
-        isinstance(event, AccountBalanceUpdatedEvent)
-        for event in dispatcher.events
+        isinstance(event, AccountBalanceUpdatedEvent) for event in dispatcher.events
     )
     assert any(
-        isinstance(event, AccountingInvoicePostedEvent)
-        for event in dispatcher.events
+        isinstance(event, AccountingInvoicePostedEvent) for event in dispatcher.events
     )
 
 
@@ -442,8 +444,7 @@ async def test_payment_creates_journal_and_updates_balances() -> None:
     assert len(uow.ledgers.entries) == PAYMENT_POSTING_ENTRY_COUNT
     assert len(uow.account_balances.balances) == PAYMENT_POSTING_ENTRY_COUNT
     assert any(
-        isinstance(event, AccountingPaymentPostedEvent)
-        for event in dispatcher.events
+        isinstance(event, AccountingPaymentPostedEvent) for event in dispatcher.events
     )
     assert uow.committed is True
 
@@ -502,12 +503,10 @@ async def test_expense_posting_publishes_events() -> None:
     assert any(isinstance(event, JournalPostedEvent) for event in dispatcher.events)
     assert any(isinstance(event, LedgerPostedEvent) for event in dispatcher.events)
     assert any(
-        isinstance(event, AccountBalanceUpdatedEvent)
-        for event in dispatcher.events
+        isinstance(event, AccountBalanceUpdatedEvent) for event in dispatcher.events
     )
     assert any(
-        isinstance(event, AccountingExpensePostedEvent)
-        for event in dispatcher.events
+        isinstance(event, AccountingExpensePostedEvent) for event in dispatcher.events
     )
 
 
@@ -585,12 +584,10 @@ async def test_purchase_posting_publishes_events() -> None:
     assert any(isinstance(event, JournalPostedEvent) for event in dispatcher.events)
     assert any(isinstance(event, LedgerPostedEvent) for event in dispatcher.events)
     assert any(
-        isinstance(event, AccountBalanceUpdatedEvent)
-        for event in dispatcher.events
+        isinstance(event, AccountBalanceUpdatedEvent) for event in dispatcher.events
     )
     assert any(
-        isinstance(event, AccountingPurchasePostedEvent)
-        for event in dispatcher.events
+        isinstance(event, AccountingPurchasePostedEvent) for event in dispatcher.events
     )
 
 
@@ -625,3 +622,43 @@ async def test_purchase_kernel_rolls_back_when_ledger_posting_fails() -> None:
 
     assert uow.committed is False
     assert uow.rolled_back is True
+
+
+async def test_purchase_invoice_with_igst_posts_input_igst_journal_line() -> None:
+    """Purchase invoice with IGST creates Input IGST line and preserves balance."""
+    purchase = build_purchase()
+    purchase.lines = [
+        PurchaseInvoiceLine(
+            id=uuid.uuid4(),
+            purchase_invoice_id=purchase.id,
+            description="Inter-state supplies",
+            quantity=Decimal("1.00"),
+            unit_cost=Decimal("1000.00"),
+            tax_rate=Decimal("18.00"),
+            line_total=Decimal("1180.00"),
+            cgst_amount=Decimal("0.00"),
+            sgst_amount=Decimal("0.00"),
+            igst_amount=Decimal("180.00"),
+            cess_amount=Decimal("0.00"),
+        )
+    ]
+    dispatcher = CapturingEventDispatcher()
+    uow = FakeAccountingUnitOfWork(purchase=purchase)
+    service = build_service(uow, dispatcher)
+
+    journal = await service.record_purchase_invoice(purchase.id)
+
+    assert journal.status == JournalStatus.POSTED
+    igst_lines = [
+        line
+        for line in journal.lines
+        if "Input IGST" in (line.description or "")
+    ]
+    assert len(igst_lines) == 1
+    assert igst_lines[0].debit == Decimal("180.00")
+    assert igst_lines[0].credit == Decimal("0.00")
+
+    total_debits = sum(line.debit for line in journal.lines)
+    total_credits = sum(line.credit for line in journal.lines)
+    assert total_debits == total_credits == Decimal("1180.00")
+

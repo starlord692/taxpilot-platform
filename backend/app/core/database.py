@@ -63,6 +63,17 @@ async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
         yield session
 
 
+def get_session_factory() -> async_sessionmaker[AsyncSession]:
+    """Return the initialized async session factory."""
+    if database_state.session_factory is None:
+        initialize_database()
+
+    if database_state.session_factory is None:
+        raise RuntimeError("Database session factory is not initialized")
+
+    return database_state.session_factory
+
+
 async def dispose_database() -> None:
     """Dispose database engine connections."""
     if database_state.engine is not None:

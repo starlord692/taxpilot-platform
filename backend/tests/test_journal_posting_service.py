@@ -249,9 +249,7 @@ async def test_reverse_non_posted_journal_raises() -> None:
 async def test_rollback_on_post_failure() -> None:
     """Unit of Work rolls back when posting persistence fails."""
     journal = build_journal()
-    uow = FakeJournalUnitOfWork(
-        FakeJournalRepository(journal=journal, fail_post=True)
-    )
+    uow = FakeJournalUnitOfWork(FakeJournalRepository(journal=journal, fail_post=True))
     service = build_service(uow, CapturingEventDispatcher())
 
     with pytest.raises(RuntimeError):

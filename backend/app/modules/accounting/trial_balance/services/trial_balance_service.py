@@ -1,8 +1,7 @@
-"""Trial Balance service."""
-
 import uuid
 from collections.abc import Callable
-from typing import Protocol
+from datetime import date
+from typing import Any, Protocol
 
 from app.modules.accounting.trial_balance.models import TrialBalance
 
@@ -14,6 +13,7 @@ class TrialBalancePersistenceRepository(Protocol):
         self,
         business_id: uuid.UUID,
         *,
+        as_of_date: date | None = None,
         include_zero_balances: bool = False,
     ) -> TrialBalance:
         """Generate a Trial Balance."""
@@ -39,7 +39,7 @@ class TrialBalanceUnitOfWork(Protocol):
         ...
 
 
-UnitOfWorkFactory = Callable[[], TrialBalanceUnitOfWork]
+UnitOfWorkFactory = Callable[[], Any]
 
 
 class TrialBalanceService:
@@ -53,11 +53,20 @@ class TrialBalanceService:
         self,
         business_id: uuid.UUID,
         *,
+        as_of_date: date | None = None,
         include_zero_balances: bool = False,
+        uow: Any | None = None,
     ) -> TrialBalance:
         """Generate a Trial Balance for a business."""
-        async with self._unit_of_work_factory() as uow:
+        if uow is not None:
             return await uow.trial_balances.generate_trial_balance(
                 business_id,
+                as_of_date=as_of_date,
+                include_zero_balances=include_zero_balances,
+            )
+        async with self._unit_of_work_factory() as active_uow:
+            return await active_uow.trial_balances.generate_trial_balance(
+                business_id,
+                as_of_date=as_of_date,
                 include_zero_balances=include_zero_balances,
             )

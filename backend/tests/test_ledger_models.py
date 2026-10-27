@@ -47,9 +47,7 @@ def test_ledger_relationships() -> None:
     configure_mappers()
 
     business_relationship = GeneralLedgerEntry.__mapper__.relationships["business"]
-    journal_relationship = GeneralLedgerEntry.__mapper__.relationships[
-        "journal_entry"
-    ]
+    journal_relationship = GeneralLedgerEntry.__mapper__.relationships["journal_entry"]
     line_relationship = GeneralLedgerEntry.__mapper__.relationships["journal_line"]
     account_relationship = GeneralLedgerEntry.__mapper__.relationships["account"]
 

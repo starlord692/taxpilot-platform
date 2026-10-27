@@ -25,13 +25,21 @@ class SalesInvoiceRepository(BaseRepository[SalesInvoice]):
 
     async def create(self, request: InvoiceCreateRequest) -> SalesInvoice:
         """Create a sales invoice with lines from request data."""
-        invoice_data = request.model_dump(exclude={"lines"})
+        model_fields = {c.key for c in SalesInvoice.__table__.columns}
+        invoice_data = {
+            k: v for k, v in request.model_dump(exclude={"lines"}).items()
+            if k in model_fields
+        }
+        line_fields = {c.key for c in SalesInvoiceLine.__table__.columns}
         invoice = SalesInvoice(
             **invoice_data,
             lines=[
-                SalesInvoiceLine(**line.model_dump())
+                SalesInvoiceLine(
+                    **{k: v for k, v in line.model_dump().items() if k in line_fields}
+                )
                 for line in request.lines
             ],
+            payments=[],
         )
         return await self.add(invoice)
 
@@ -41,7 +49,11 @@ class SalesInvoiceRepository(BaseRepository[SalesInvoice]):
         request: InvoiceUpdateRequest,
     ) -> SalesInvoice:
         """Update mutable invoice fields from request data."""
-        update_data = request.model_dump(exclude_unset=True, exclude={"lines"})
+        model_fields = {c.key for c in SalesInvoice.__table__.columns}
+        update_data = {
+            k: v for k, v in request.model_dump(exclude_unset=True, exclude={"lines"}).items()
+            if k in model_fields
+        }
         for field_name, value in update_data.items():
             setattr(invoice, field_name, value)
         self.session.add(invoice)
@@ -49,8 +61,8 @@ class SalesInvoiceRepository(BaseRepository[SalesInvoice]):
         return invoice
 
     async def get_by_id(self, invoice_id: uuid.UUID) -> SalesInvoice | None:
-        """Return a non-deleted invoice by UUID."""
-        statement = self._base_statement().where(SalesInvoice.id == invoice_id)
+        """Return a non-deleted invoice by UUID with lines and payments loaded."""
+        statement = self._detail_statement().where(SalesInvoice.id == invoice_id)
         result = await self.session.execute(statement)
         return result.scalar_one_or_none()
 
@@ -60,8 +72,11 @@ class SalesInvoiceRepository(BaseRepository[SalesInvoice]):
         business_id: uuid.UUID,
         invoice_number: str,
     ) -> SalesInvoice | None:
-        """Return an invoice by business-scoped invoice number."""
-        statement = self._base_statement().where(
+        """Return an invoice by business-scoped invoice number.
+
+        Detail relationships (lines and payments) are loaded.
+        """
+        statement = self._detail_statement().where(
             SalesInvoice.business_id == business_id,
             SalesInvoice.invoice_number == invoice_number,
         )
@@ -73,8 +88,8 @@ class SalesInvoiceRepository(BaseRepository[SalesInvoice]):
         business_id: uuid.UUID,
         pagination: PaginationParams | None = None,
     ) -> Page[SalesInvoice]:
-        """Return paginated invoices for a business."""
-        statement = self._base_statement().where(
+        """Return paginated summary invoices for a business."""
+        statement = self._summary_statement().where(
             SalesInvoice.business_id == business_id
         )
         return await self._paginate(statement, pagination)
@@ -84,8 +99,8 @@ class SalesInvoiceRepository(BaseRepository[SalesInvoice]):
         customer_id: uuid.UUID,
         pagination: PaginationParams | None = None,
     ) -> Page[SalesInvoice]:
-        """Return paginated invoices for a customer."""
-        statement = self._base_statement().where(
+        """Return paginated summary invoices for a customer."""
+        statement = self._summary_statement().where(
             SalesInvoice.customer_id == customer_id
         )
         return await self._paginate(statement, pagination)
@@ -96,7 +111,11 @@ class SalesInvoiceRepository(BaseRepository[SalesInvoice]):
         request: InvoiceLineRequest,
     ) -> SalesInvoiceLine:
         """Add a line to an invoice."""
-        line = SalesInvoiceLine(invoice_id=invoice.id, **request.model_dump())
+        line_fields = {c.key for c in SalesInvoiceLine.__table__.columns}
+        line_data = {
+            k: v for k, v in request.model_dump().items() if k in line_fields
+        }
+        line = SalesInvoiceLine(invoice_id=invoice.id, **line_data)
         self.session.add(line)
         await self.session.flush()
         return line
@@ -136,20 +155,32 @@ class SalesInvoiceRepository(BaseRepository[SalesInvoice]):
         )
 
     async def _count_statement(self, statement: Select[tuple[SalesInvoice]]) -> int:
-        """Count rows from a selectable statement."""
-        count_statement = select(func.count()).select_from(statement.subquery())
+        """Count rows from a selectable statement using public SQLAlchemy API."""
+        clean_stmt = statement.order_by(None).offset(None).limit(None)
+        count_statement = select(func.count()).select_from(clean_stmt.subquery())
         result = await self.session.execute(count_statement)
         return int(result.scalar_one())
 
-    def _base_statement(self) -> Select[tuple[SalesInvoice]]:
-        """Return standard invoice select with relationships loaded."""
+    def _summary_statement(self) -> Select[tuple[SalesInvoice]]:
+        """Return summary invoice select without child collections."""
+        return (
+            select(SalesInvoice)
+            .where(SalesInvoice.is_deleted.is_(False))
+            .order_by(SalesInvoice.invoice_date.desc(), SalesInvoice.created_at.desc())
+        )
+
+    def _detail_statement(self) -> Select[tuple[SalesInvoice]]:
+        """Return detail invoice select with lines and payments loaded."""
         return (
             select(SalesInvoice)
             .options(
-                selectinload(SalesInvoice.lines),
+                selectinload(SalesInvoice.lines).selectinload(SalesInvoiceLine.catalog_item),
                 selectinload(SalesInvoice.payments),
-                selectinload(SalesInvoice.customer),
             )
             .where(SalesInvoice.is_deleted.is_(False))
             .order_by(SalesInvoice.invoice_date.desc(), SalesInvoice.created_at.desc())
         )
+
+    def _base_statement(self) -> Select[tuple[SalesInvoice]]:
+        """Backwards-compatibility alias returning detail statement."""
+        return self._detail_statement()

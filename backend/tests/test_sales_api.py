@@ -14,6 +14,7 @@ from app.modules.sales.api.dependencies import (
     get_sales_invoice_service,
     get_sales_unit_of_work,
 )
+from app.modules.sales.exceptions import SalesInvalidInvoiceStatusException
 from app.modules.sales.models import (
     Customer,
     InvoiceStatus,
@@ -28,8 +29,10 @@ from app.modules.sales.schemas import (
     InvoiceUpdateRequest,
 )
 
+HTTP_CONFLICT = 409
 HTTP_CREATED = 201
 HTTP_FORBIDDEN = 403
+HTTP_NOT_FOUND = 404
 HTTP_OK = 200
 HTTP_UNAUTHORIZED = 401
 
@@ -175,9 +178,15 @@ class FakeSalesUnitOfWork:
 class FakeSalesInvoiceService:
     """Fake Sales invoice service for API tests."""
 
-    def __init__(self, invoice: InvoiceResponse) -> None:
+    def __init__(
+        self,
+        invoice: InvoiceResponse,
+        *,
+        cancel_exception: Exception | None = None,
+    ) -> None:
         """Initialize with an invoice response."""
         self.invoice = invoice
+        self.cancel_exception = cancel_exception
         self.created_request: InvoiceCreateRequest | None = None
         self.updated_request: InvoiceUpdateRequest | None = None
 
@@ -202,7 +211,9 @@ class FakeSalesInvoiceService:
         return self.invoice.model_copy(update={"status": InvoiceStatus.ISSUED})
 
     async def cancel_invoice(self, invoice_id: uuid.UUID) -> InvoiceResponse:
-        """Return cancelled invoice."""
+        """Return cancelled invoice or raise cancel_exception."""
+        if self.cancel_exception is not None:
+            raise self.cancel_exception
         _ = invoice_id
         return self.invoice.model_copy(update={"status": InvoiceStatus.CANCELLED})
 
@@ -302,6 +313,7 @@ def build_client(
     *,
     authenticated: bool = True,
     is_member: bool = True,
+    cancel_exception: Exception | None = None,
 ) -> tuple[
     TestClient,
     FakeSalesUnitOfWork,
@@ -318,7 +330,10 @@ def build_client(
         invoice=invoice,
         is_member=is_member,
     )
-    service = FakeSalesInvoiceService(InvoiceResponse.model_validate(invoice))
+    service = FakeSalesInvoiceService(
+        InvoiceResponse.model_validate(invoice),
+        cancel_exception=cancel_exception,
+    )
     user = build_user()
 
     app.dependency_overrides[get_sales_unit_of_work] = lambda: uow
@@ -434,6 +449,26 @@ def test_update_issue_and_cancel_invoice_endpoints() -> None:
     assert cancel_response.json()["data"]["status"] == "cancelled"
 
 
+def test_cancel_invoice_rejects_non_draft_status() -> None:
+    """AC-AIS Track A: Cancelling a non-draft invoice returns 409 Conflict."""
+    client, uow, _service, _user = build_client(
+        cancel_exception=SalesInvalidInvoiceStatusException(
+            "Cannot cancel invoice in issued status",
+            details={"current_status": "issued", "target_status": "cancelled"},
+        )
+    )
+    invoice_id = uow.sales_invoices.invoice.id
+
+    with client:
+        response = client.post(f"/api/v1/sales/invoices/{invoice_id}/cancel")
+
+    assert response.status_code == HTTP_CONFLICT
+    body = response.json()
+    assert body["success"] is False
+    assert body["data"]["code"] == "sales.invalid_invoice_status"
+    assert "issued status" in body["message"]
+
+
 def test_unauthorized_access() -> None:
     """Sales endpoints require authentication."""
     client, uow, _service, _user = build_client(authenticated=False)
@@ -460,6 +495,28 @@ def test_business_isolation() -> None:
 
     assert response.status_code == HTTP_FORBIDDEN
     assert response.json()["data"]["code"] == "business.not_member"
+
+
+def test_invoice_cross_tenant_isolation_returns_not_found() -> None:
+    """Non-members querying foreign invoice get uniform 404."""
+    client, uow, _service, _user = build_client(is_member=False)
+    invoice_id = uow.sales_invoices.invoice.id
+    foreign_business_id = str(uow.sales_invoices.invoice.business_id)
+
+    with client:
+        get_response = client.get(f"/api/v1/sales/invoices/{invoice_id}")
+        patch_response = client.patch(
+            f"/api/v1/sales/invoices/{invoice_id}",
+            json={"notes": "Attacking"},
+        )
+        issue_response = client.post(f"/api/v1/sales/invoices/{invoice_id}/issue")
+        cancel_response = client.post(f"/api/v1/sales/invoices/{invoice_id}/cancel")
+
+    for response in (get_response, patch_response, issue_response, cancel_response):
+        assert response.status_code == HTTP_NOT_FOUND
+        payload = response.json()
+        assert payload["data"]["code"] == "sales.invoice_not_found"
+        assert foreign_business_id not in str(payload)
 
 
 def test_openapi_documents_sales_routes() -> None:

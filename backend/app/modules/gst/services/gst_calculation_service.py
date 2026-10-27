@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.common.events import EventDispatcher
 from app.modules.gst.events import GSTCalculatedEvent, GSTRecalculatedEvent
+from app.modules.gst.jurisdictions import is_utgst_jurisdiction
 from app.modules.gst.models import GSTRoundingMethod, GSTSettings
 
 MONEY_PLACES = Decimal("0.01")
@@ -39,6 +40,7 @@ class GSTCalculationLineInput(BaseModel):
     tax_rate: Decimal = Decimal("0.00")
     cess_rate: Decimal = Decimal("0.00")
     supply_type: GSTSupplyType = GSTSupplyType.INTRA_STATE
+    is_utgst: bool = False
     reverse_charge: bool = False
     composition_dealer: bool = False
     hsn_code: str | None = None
@@ -102,6 +104,7 @@ class GSTLineBreakdown(BaseModel):
     cgst_amount: Decimal
     sgst_amount: Decimal
     igst_amount: Decimal
+    utgst_amount: Decimal = ZERO_AMOUNT
     cess_amount: Decimal
     tax_amount: Decimal
     effective_tax_rate: Decimal
@@ -123,6 +126,7 @@ class GSTBreakdown(BaseModel):
     cgst_amount: Decimal
     sgst_amount: Decimal
     igst_amount: Decimal
+    utgst_amount: Decimal = ZERO_AMOUNT
     cess_amount: Decimal
     tax_amount: Decimal
     total_amount: Decimal
@@ -163,12 +167,15 @@ class GSTCalculationService:
     ) -> GSTBreakdown:
         """Calculate GST totals for multiple lines."""
         validated = self._prepare_request(request)
+        is_request_utgst = is_utgst_jurisdiction(validated.place_of_supply) if validated.place_of_supply else False
+        derived_supply_type = self._derive_supply_type(validated)
         lines = [
             self.calculate_line(
                 line,
                 tax_inclusive=validated.tax_inclusive,
                 rounding_method=validated.rounding_method,
-                default_supply_type=self._derive_supply_type(validated),
+                default_supply_type=derived_supply_type,
+                is_utgst=is_request_utgst,
             )
             for line in validated.lines
         ]
@@ -180,6 +187,7 @@ class GSTCalculationService:
             cgst_amount=self._sum_money(line.cgst_amount for line in lines),
             sgst_amount=self._sum_money(line.sgst_amount for line in lines),
             igst_amount=self._sum_money(line.igst_amount for line in lines),
+            utgst_amount=self._sum_money(line.utgst_amount for line in lines),
             cess_amount=self._sum_money(line.cess_amount for line in lines),
             tax_amount=self._sum_money(line.tax_amount for line in lines),
             total_amount=self._sum_money(line.line_total for line in lines),
@@ -195,6 +203,7 @@ class GSTCalculationService:
         tax_inclusive: bool = False,
         rounding_method: GSTRoundingMethod = GSTRoundingMethod.NEAREST,
         default_supply_type: GSTSupplyType = GSTSupplyType.INTRA_STATE,
+        is_utgst: bool = False,
     ) -> GSTLineBreakdown:
         """Calculate GST for one line."""
         validated = GSTCalculationLineInput.model_validate(line)
@@ -220,14 +229,22 @@ class GSTCalculationService:
         cgst_amount = ZERO_AMOUNT
         sgst_amount = ZERO_AMOUNT
         igst_amount = ZERO_AMOUNT
+        utgst_amount = ZERO_AMOUNT
+        use_utgst = validated.is_utgst or is_utgst
         if supply_type == GSTSupplyType.INTRA_STATE and component_total > ZERO_AMOUNT:
             cgst_amount = self._round(component_total / Decimal("2"), rounding_method)
-            sgst_amount = self._round(component_total - cgst_amount, rounding_method)
+            half_remaining = self._round(component_total - cgst_amount, rounding_method)
+            if use_utgst:
+                utgst_amount = half_remaining
+                sgst_amount = ZERO_AMOUNT
+            else:
+                sgst_amount = half_remaining
+                utgst_amount = ZERO_AMOUNT
         elif supply_type == GSTSupplyType.INTER_STATE:
             igst_amount = component_total
 
         tax_amount = self._round(
-            cgst_amount + sgst_amount + igst_amount + cess_amount,
+            cgst_amount + sgst_amount + igst_amount + utgst_amount + cess_amount,
             rounding_method,
         )
         line_total = (
@@ -241,6 +258,7 @@ class GSTCalculationService:
             cgst_amount=cgst_amount,
             sgst_amount=sgst_amount,
             igst_amount=igst_amount,
+            utgst_amount=utgst_amount,
             cess_amount=cess_amount,
             tax_amount=tax_amount,
             effective_tax_rate=rate + validated.cess_rate,

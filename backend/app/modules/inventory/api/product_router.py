@@ -40,7 +40,10 @@ InventoryUnitOfWorkDependency = Annotated[Any, Depends(get_inventory_unit_of_wor
         HTTPStatus.UNAUTHORIZED: {"model": ErrorResponse},
         HTTPStatus.FORBIDDEN: {"model": ErrorResponse},
         HTTPStatus.CONFLICT: {"model": ErrorResponse},
-        HTTPStatus.UNPROCESSABLE_ENTITY: {"model": ErrorResponse},
+        HTTPStatus.BAD_REQUEST: {
+            "model": ErrorResponse,
+            "description": "Request validation failed.",
+        },
     },
 )
 async def create_product(
@@ -161,7 +164,10 @@ async def get_product(
         HTTPStatus.FORBIDDEN: {"model": ErrorResponse},
         HTTPStatus.NOT_FOUND: {"model": ErrorResponse},
         HTTPStatus.CONFLICT: {"model": ErrorResponse},
-        HTTPStatus.UNPROCESSABLE_ENTITY: {"model": ErrorResponse},
+        HTTPStatus.BAD_REQUEST: {
+            "model": ErrorResponse,
+            "description": "Request validation failed.",
+        },
     },
 )
 async def update_product(

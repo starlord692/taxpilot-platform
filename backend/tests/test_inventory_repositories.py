@@ -254,9 +254,7 @@ async def test_product_lookup_filtering_sorting_search_and_exists() -> None:
         business_id=product.business_id,
         pagination=PaginationParams(page=1, size=10),
         filters=FilterParams(
-            filters=[
-                FilterCondition(field="is_active", operator="eq", value=True)
-            ],
+            filters=[FilterCondition(field="is_active", operator="eq", value=True)],
         ),
         sort="name",
         category="Hardware",
@@ -327,9 +325,7 @@ async def test_warehouse_lookup_filtering_sorting_search_and_exists() -> None:
         business_id=warehouse.business_id,
         pagination=PaginationParams(page=1, size=10),
         filters=FilterParams(
-            filters=[
-                FilterCondition(field="is_active", operator="eq", value=True)
-            ],
+            filters=[FilterCondition(field="is_active", operator="eq", value=True)],
         ),
         sort="code",
         is_active=True,

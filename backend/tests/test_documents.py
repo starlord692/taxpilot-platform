@@ -460,9 +460,7 @@ async def test_process_ocr_and_provider_selection() -> None:
 @pytest.mark.asyncio
 async def test_ocr_failure_rolls_back_and_publishes_failure() -> None:
     """OCR provider failures are wrapped and rolled back."""
-    business_id, uow, _storage, service, dispatcher = build_service_state(
-        fail_ocr=True
-    )
+    business_id, uow, _storage, service, dispatcher = build_service_state(fail_ocr=True)
     document_id = await upload_sample(service, business_id=business_id)
 
     with pytest.raises(OCRProcessingException):

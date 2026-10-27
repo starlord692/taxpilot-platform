@@ -512,9 +512,7 @@ async def test_create_expense_calculates_totals_and_publishes_event() -> None:
 async def test_expense_vendor_validation() -> None:
     """Expense service validates vendor business ownership and active state."""
     inactive_vendor = build_vendor(is_active=False)
-    uow = FakeExpenseUnitOfWork(
-        vendor_repository=FakeVendorRepository(inactive_vendor)
-    )
+    uow = FakeExpenseUnitOfWork(vendor_repository=FakeVendorRepository(inactive_vendor))
     service = build_expense_service(uow, CapturingEventDispatcher())
 
     with pytest.raises(VendorInactiveException):

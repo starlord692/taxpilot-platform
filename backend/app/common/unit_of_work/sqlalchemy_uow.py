@@ -1,15 +1,21 @@
 """SQLAlchemy Unit of Work implementation."""
 
+import inspect
 from collections.abc import Callable
 from types import TracebackType
 from typing import Self
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.common.unit_of_work.interface import UnitOfWork
+from app.common.outbox.repository import OutboxRepository
+from app.common.unit_of_work.interface import PostCommitHook, UnitOfWork
+from app.core.logging import get_logger
 from app.modules.accounting.balances.repository import AccountBalanceRepository
 from app.modules.accounting.chart_of_accounts.repository import (
     ChartOfAccountsRepository,
+)
+from app.modules.accounting.financial_performance_evidence.repository import (
+    SQLAlchemyAFPEPersistenceRepository,
 )
 from app.modules.accounting.financial_statements.repository import (
     FinancialStatementRepository,
@@ -20,6 +26,10 @@ from app.modules.accounting.trial_balance.repository import TrialBalanceReposito
 from app.modules.business.repository import (
     BusinessMembershipRepository,
     BusinessRepository,
+)
+from app.modules.catalog.repository import (
+    CatalogItemRepository,
+    InventoryItemProfileRepository,
 )
 from app.modules.documents.automation.repository import AutomationRunRepository
 from app.modules.documents.extraction.repository import (
@@ -50,6 +60,7 @@ from app.modules.gst.einvoice.repository import (
     GSTProviderRepository,
 )
 from app.modules.gst.repository import (
+    GSTINVerificationRepository,
     GSTRegistrationRepository,
     GSTSettingsRepository,
     GSTTaxRateRepository,
@@ -80,16 +91,19 @@ from app.modules.sales.repository import (
 )
 
 SessionFactory = Callable[[], AsyncSession]
+logger = get_logger(__name__)
 
 
 class SQLAlchemyUnitOfWork(UnitOfWork):
     """Coordinate repositories inside a single SQLAlchemy transaction."""
 
-    def __init__(self, session_factory: SessionFactory) -> None:
+    def __init__(self, session_factory: SessionFactory) -> None:  # noqa: PLR0915
         """Initialize with a dependency-injected async session factory."""
         self._session_factory = session_factory
         self._session: AsyncSession | None = None
         self._committed = False
+        self._post_commit_hooks: list[PostCommitHook] = []
+        self.outbox: OutboxRepository
         self.users: IdentityUserRepository
         self.roles: IdentityRoleRepository
         self.permissions: IdentityPermissionRepository
@@ -113,6 +127,7 @@ class SQLAlchemyUnitOfWork(UnitOfWork):
         self.account_balances: AccountBalanceRepository
         self.trial_balances: TrialBalanceRepository
         self.financial_statements: FinancialStatementRepository
+        self.afpe: SQLAlchemyAFPEPersistenceRepository
         self.customers: CustomerRepository
         self.sales_invoices: SalesInvoiceRepository
         self.payments: PaymentRepository
@@ -131,15 +146,25 @@ class SQLAlchemyUnitOfWork(UnitOfWork):
         self.hsn_codes: HSNCodeRepository
         self.sac_codes: SACCodeRepository
         self.gst_settings: GSTSettingsRepository
+        self.gstin_verifications: GSTINVerificationRepository
         self.gst_compliance: GSTComplianceRepository
         self.einvoices: EInvoiceRepository
         self.eway_bills: EWayBillRepository
         self.gst_providers: GSTProviderRepository
+        self.catalog_items: CatalogItemRepository
+        self.inventory_profiles: InventoryItemProfileRepository
 
-    async def __aenter__(self) -> Self:
+    async def __aenter__(self) -> Self:  # noqa: PLR0915
         """Open a session and bind repositories to the transaction scope."""
+        if self._session is not None:
+            raise RuntimeError(
+                "Unit of Work is already active and does not support "
+                "re-entrant or nested context entry. "
+                "Pass the active UnitOfWork instance to subordinate services."
+            )
         self._session = self._session_factory()
         self._committed = False
+        self.outbox = OutboxRepository(self._session)
         self.users = IdentityUserRepository(self._session)
         self.roles = IdentityRoleRepository(self._session)
         self.permissions = IdentityPermissionRepository(self._session)
@@ -161,10 +186,15 @@ class SQLAlchemyUnitOfWork(UnitOfWork):
         self.journals = JournalRepository(self._session)
         self.ledgers = LedgerRepository(self._session)
         self.account_balances = AccountBalanceRepository(self._session)
-        self.trial_balances = TrialBalanceRepository(self.account_balances)
+        self.trial_balances = TrialBalanceRepository(
+            self.account_balances,
+            ledger_repository=self.ledgers,
+            chart_repository=self.chart_of_accounts,
+        )
         self.financial_statements = FinancialStatementRepository(
             self.trial_balances
         )
+        self.afpe = SQLAlchemyAFPEPersistenceRepository(self._session)
         self.customers = CustomerRepository(self._session)
         self.sales_invoices = SalesInvoiceRepository(self._session)
         self.payments = PaymentRepository(self._session)
@@ -183,10 +213,13 @@ class SQLAlchemyUnitOfWork(UnitOfWork):
         self.hsn_codes = HSNCodeRepository(self._session)
         self.sac_codes = SACCodeRepository(self._session)
         self.gst_settings = GSTSettingsRepository(self._session)
+        self.gstin_verifications = GSTINVerificationRepository(self._session)
         self.gst_compliance = GSTComplianceRepository(self._session)
         self.einvoices = EInvoiceRepository(self._session)
         self.eway_bills = EWayBillRepository(self._session)
         self.gst_providers = GSTProviderRepository(self._session)
+        self.catalog_items = CatalogItemRepository(self._session)
+        self.inventory_profiles = InventoryItemProfileRepository(self._session)
         return self
 
     async def __aexit__(
@@ -199,25 +232,54 @@ class SQLAlchemyUnitOfWork(UnitOfWork):
         try:
             if exc_type is not None or not self._committed:
                 await self.rollback()
+        except Exception:
+            if exc_type is None:
+                raise
+            logger.warning("uow_rollback_failed_on_exit", exc_info=True)
         finally:
+            self._post_commit_hooks.clear()
             if self._session is not None:
-                await self._session.close()
-                self._session = None
+                try:
+                    await self._session.close()
+                finally:
+                    self._session = None
 
     async def commit(self) -> None:
         """Commit the current transaction."""
         session = self._get_session()
+        if self._committed:
+            raise RuntimeError("Unit of Work transaction has already been committed")
         await session.commit()
         self._committed = True
+        hooks = list(self._post_commit_hooks)
+        self._post_commit_hooks.clear()
+        for hook in hooks:
+            try:
+                res = hook()
+                if inspect.isawaitable(res):
+                    await res
+            except Exception:
+                logger.error("uow_post_commit_hook_failed", exc_info=True)
 
     async def rollback(self) -> None:
         """Rollback the current transaction."""
+        self._post_commit_hooks.clear()
         session = self._get_session()
         await session.rollback()
         self._committed = False
+ 
+    def on_commit(self, hook: PostCommitHook) -> None:
+        """Register a callback executed only after transaction commit succeeds."""
+        self._post_commit_hooks.append(hook)
 
     def _get_session(self) -> AsyncSession:
         """Return the active session or raise when outside a scope."""
         if self._session is None:
             raise RuntimeError("Unit of Work is not active")
         return self._session
+
+    @property
+    def is_active(self) -> bool:
+        """Return whether the Unit of Work has an active session."""
+        return self._session is not None
+

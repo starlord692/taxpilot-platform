@@ -3,11 +3,25 @@
 import uuid
 from datetime import date
 from decimal import Decimal
-from typing import Self
+from http import HTTPStatus
+from typing import Any, Self
 
 import pytest
 
 from app.common.events import Event, EventDispatcher
+from app.modules.catalog.models import (
+    CatalogItem,
+    CatalogItemStatus,
+    InventoryItemProfile,
+    ItemType,
+)
+from app.modules.gst.services.pos_resolution_service import (
+    ConsigneeRequiredException,
+    DirectingPartyIndeterminateException,
+    DirectionTiming,
+    DirectionTimingUnestablishedException,
+    ShippingStateRequiredException,
+)
 from app.modules.sales.events import (
     InvoiceCancelledEvent,
     InvoiceCreatedEvent,
@@ -19,6 +33,7 @@ from app.modules.sales.events import (
 from app.modules.sales.exceptions import (
     SalesDuplicateInvoiceNumberException,
     SalesInvalidInvoiceStatusException,
+    SalesInvoiceValidationException,
 )
 from app.modules.sales.models import (
     Customer,
@@ -239,7 +254,11 @@ class FakeAccountingKernel:
         """Initialize captured calls."""
         self.invoice_ids: list[uuid.UUID] = []
 
-    async def record_sales_invoice(self, invoice_id: uuid.UUID) -> object:
+    async def record_sales_invoice(
+        self,
+        invoice_id: uuid.UUID,
+        uow: Any = None,
+    ) -> object:
         """Capture invoice posting call."""
         self.invoice_ids.append(invoice_id)
         return object()
@@ -251,10 +270,29 @@ class FakeSalesStockEngine:
     def __init__(self) -> None:
         """Initialize captured calls."""
         self.invoices: list[SalesInvoice] = []
+        self.stock_lines: list[Any] = []
 
-    async def issue_sale(self, sales_invoice: SalesInvoice) -> object:
+    async def issue_sale(
+        self,
+        sales_invoice: SalesInvoice,
+        *,
+        warehouse_id: uuid.UUID | None = None,
+        uow: Any = None,
+    ) -> object:
         """Capture sale stock issue call."""
         self.invoices.append(sales_invoice)
+        return object()
+
+    async def issue_sale_lines(
+        self,
+        sales_invoice: SalesInvoice,
+        lines: list[Any],
+        *,
+        uow: Any = None,
+    ) -> object:
+        """Capture sale stock issue lines call."""
+        self.invoices.append(sales_invoice)
+        self.stock_lines.extend(lines)
         return object()
 
 
@@ -269,17 +307,71 @@ def build_customer(business_id: uuid.UUID | None = None) -> Customer:
     )
 
 
+def build_catalog_item(
+    *,
+    business_id: uuid.UUID,
+    item_type: ItemType = ItemType.SERVICE,
+    status: CatalogItemStatus = CatalogItemStatus.ACTIVE,
+    name: str = "Monthly bookkeeping",
+    legacy_product_id: uuid.UUID | None = None,
+    default_warehouse_id: uuid.UUID | None = None,
+    stock_tracking: bool = False,
+) -> CatalogItem:
+    """Build a catalog item model."""
+    item_id = uuid.uuid4()
+    item = CatalogItem(
+        id=item_id,
+        business_id=business_id,
+        name=name,
+        code="CAT-001",
+        item_type=item_type,
+        status=status,
+        default_unit="PCS",
+        gst_rate=Decimal("18.00"),
+        selling_price=Decimal("500.00"),
+    )
+    if stock_tracking or legacy_product_id or default_warehouse_id:
+        item.inventory_profile = InventoryItemProfile(
+            id=uuid.uuid4(),
+            catalog_item_id=item_id,
+            stock_tracking=stock_tracking,
+            legacy_product_id=legacy_product_id,
+            default_warehouse_id=default_warehouse_id,
+        )
+    return item
+
+
 def build_invoice(
     *,
     status: InvoiceStatus = InvoiceStatus.DRAFT,
     business_id: uuid.UUID | None = None,
     customer_id: uuid.UUID | None = None,
+    catalog_item: CatalogItem | None = None,
+    with_catalog_line: bool = True,
 ) -> SalesInvoice:
     """Build an invoice model."""
     invoice_id = uuid.uuid4()
+    b_id = business_id or uuid.uuid4()
+    if with_catalog_line and catalog_item is None:
+        catalog_item = build_catalog_item(business_id=b_id)
+
+    line = SalesInvoiceLine(
+        id=uuid.uuid4(),
+        invoice_id=invoice_id,
+        catalog_item_id=catalog_item.id if catalog_item else None,
+        description=catalog_item.name if catalog_item else "Monthly bookkeeping",
+        quantity=Decimal("2.00"),
+        unit_price=Decimal("500.00"),
+        discount=Decimal("50.00"),
+        tax_rate=Decimal("18.00"),
+        line_total=Decimal("1121.00"),
+    )
+    if catalog_item:
+        line.catalog_item = catalog_item
+
     return SalesInvoice(
         id=invoice_id,
-        business_id=business_id or uuid.uuid4(),
+        business_id=b_id,
         customer_id=customer_id or uuid.uuid4(),
         invoice_number="INV-0001",
         invoice_date=date(2026, 4, 1),
@@ -289,18 +381,7 @@ def build_invoice(
         taxable_amount=Decimal("950.00"),
         tax_amount=Decimal("171.00"),
         total_amount=Decimal("1121.00"),
-        lines=[
-            SalesInvoiceLine(
-                id=uuid.uuid4(),
-                invoice_id=invoice_id,
-                description="Monthly bookkeeping",
-                quantity=Decimal("2.00"),
-                unit_price=Decimal("500.00"),
-                discount=Decimal("50.00"),
-                tax_rate=Decimal("18.00"),
-                line_total=Decimal("1121.00"),
-            )
-        ],
+        lines=[line],
     )
 
 
@@ -308,20 +389,21 @@ def build_invoice_request(
     *,
     business_id: uuid.UUID,
     customer_id: uuid.UUID,
+    **kwargs: Any,
 ) -> InvoiceCreateRequest:
     """Build a valid invoice create request."""
-    return InvoiceCreateRequest(
-        business_id=business_id,
-        customer_id=customer_id,
-        invoice_number="INV-0001",
-        invoice_date=date(2026, 4, 1),
-        due_date=date(2026, 4, 30),
-        subtotal=Decimal("0.00"),
-        discount_amount=Decimal("0.00"),
-        taxable_amount=Decimal("0.00"),
-        tax_amount=Decimal("0.00"),
-        total_amount=Decimal("0.00"),
-        lines=[
+    data: dict[str, Any] = {
+        "business_id": business_id,
+        "customer_id": customer_id,
+        "invoice_number": "INV-0001",
+        "invoice_date": date(2026, 4, 1),
+        "due_date": date(2026, 4, 30),
+        "subtotal": Decimal("0.00"),
+        "discount_amount": Decimal("0.00"),
+        "taxable_amount": Decimal("0.00"),
+        "tax_amount": Decimal("0.00"),
+        "total_amount": Decimal("0.00"),
+        "lines": [
             InvoiceLineRequest(
                 description="Monthly bookkeeping",
                 quantity=Decimal("2.00"),
@@ -331,7 +413,9 @@ def build_invoice_request(
                 line_total=Decimal("0.00"),
             )
         ],
-    )
+    }
+    data.update(kwargs)
+    return InvoiceCreateRequest(**data)
 
 
 def build_service(
@@ -468,8 +552,24 @@ async def test_issue_invoice_calls_accounting_kernel() -> None:
 
 
 async def test_issue_invoice_calls_stock_engine() -> None:
-    """Issuing an invoice delegates stock issuing to the inventory engine."""
-    invoice = build_invoice(status=InvoiceStatus.DRAFT)
+    """Issuing an invoice with a stock-tracked product delegates stock issuing
+    to inventory engine."""
+    b_id = uuid.uuid4()
+    p_id = uuid.uuid4()
+    wh_id = uuid.uuid4()
+    cat_item = build_catalog_item(
+        business_id=b_id,
+        item_type=ItemType.PRODUCT,
+        name="Server Hardware",
+        stock_tracking=True,
+        legacy_product_id=p_id,
+        default_warehouse_id=wh_id,
+    )
+    invoice = build_invoice(
+        status=InvoiceStatus.DRAFT,
+        business_id=b_id,
+        catalog_item=cat_item,
+    )
     stock_engine = FakeSalesStockEngine()
     uow = FakeSalesInvoiceUnitOfWork(
         customer_repository=FakeCustomerRepository(build_customer(invoice.business_id)),
@@ -484,11 +584,136 @@ async def test_issue_invoice_calls_stock_engine() -> None:
     await service.issue_invoice(invoice.id)
 
     assert stock_engine.invoices == [invoice]
+    assert len(stock_engine.stock_lines) == 1
+    assert stock_engine.stock_lines[0].product_id == p_id
+    assert stock_engine.stock_lines[0].warehouse_id == wh_id
+
+
+async def test_issue_invoice_service_line_skips_stock_engine() -> None:
+    """Issuing an invoice with only service lines does NOT call the stock engine."""
+    b_id = uuid.uuid4()
+    cat_item = build_catalog_item(
+        business_id=b_id,
+        item_type=ItemType.SERVICE,
+        name="Cloud Consulting",
+    )
+    invoice = build_invoice(
+        status=InvoiceStatus.DRAFT,
+        business_id=b_id,
+        catalog_item=cat_item,
+    )
+    stock_engine = FakeSalesStockEngine()
+    uow = FakeSalesInvoiceUnitOfWork(
+        customer_repository=FakeCustomerRepository(build_customer(invoice.business_id)),
+        invoice_repository=FakeInvoiceRepository(invoice=invoice),
+    )
+    service = SalesInvoiceService(
+        unit_of_work_factory=lambda: uow,
+        event_dispatcher=CapturingEventDispatcher(),
+        stock_engine=stock_engine,
+    )
+
+    await service.issue_invoice(invoice.id)
+
+    assert len(stock_engine.invoices) == 0
+    assert len(stock_engine.stock_lines) == 0
+
+
+async def test_issue_invoice_rejects_unclassified_line() -> None:
+    """Issuing fails closed if any line lacks a catalog_item_id."""
+    invoice = build_invoice(status=InvoiceStatus.DRAFT, with_catalog_line=False)
+    uow = FakeSalesInvoiceUnitOfWork(
+        customer_repository=FakeCustomerRepository(build_customer(invoice.business_id)),
+        invoice_repository=FakeInvoiceRepository(invoice=invoice),
+    )
+    service = build_service(uow, CapturingEventDispatcher())
+
+    with pytest.raises(SalesInvoiceValidationException) as exc_info:
+        await service.issue_invoice(invoice.id)
+    assert "not linked to a catalog item" in str(exc_info.value)
+
+
+async def test_issue_invoice_rejects_archived_catalog_item() -> None:
+    """Issuing fails closed if a catalog item is archived."""
+    b_id = uuid.uuid4()
+    cat_item = build_catalog_item(
+        business_id=b_id,
+        status=CatalogItemStatus.ARCHIVED,
+        name="Deprecated Widget",
+    )
+    invoice = build_invoice(
+        status=InvoiceStatus.DRAFT,
+        business_id=b_id,
+        catalog_item=cat_item,
+    )
+    uow = FakeSalesInvoiceUnitOfWork(
+        customer_repository=FakeCustomerRepository(build_customer(invoice.business_id)),
+        invoice_repository=FakeInvoiceRepository(invoice=invoice),
+    )
+    service = build_service(uow, CapturingEventDispatcher())
+
+    with pytest.raises(SalesInvoiceValidationException) as exc_info:
+        await service.issue_invoice(invoice.id)
+    assert "archived" in str(exc_info.value)
+
+
+async def test_issue_invoice_rejects_stock_tracked_missing_product_mapping() -> None:
+    """Issuing fails closed if stock-tracked item is missing legacy_product_id."""
+    b_id = uuid.uuid4()
+    cat_item = build_catalog_item(
+        business_id=b_id,
+        item_type=ItemType.PRODUCT,
+        name="Untracked Router",
+        stock_tracking=True,
+        legacy_product_id=None,
+        default_warehouse_id=uuid.uuid4(),
+    )
+    invoice = build_invoice(
+        status=InvoiceStatus.DRAFT,
+        business_id=b_id,
+        catalog_item=cat_item,
+    )
+    uow = FakeSalesInvoiceUnitOfWork(
+        customer_repository=FakeCustomerRepository(build_customer(invoice.business_id)),
+        invoice_repository=FakeInvoiceRepository(invoice=invoice),
+    )
+    service = build_service(uow, CapturingEventDispatcher())
+
+    with pytest.raises(SalesInvoiceValidationException) as exc_info:
+        await service.issue_invoice(invoice.id)
+    assert "linked inventory product mapping" in str(exc_info.value)
+
+
+async def test_issue_invoice_rejects_stock_tracked_missing_warehouse() -> None:
+    """Issuing fails closed if warehouse cannot be resolved for stock-tracked item."""
+    b_id = uuid.uuid4()
+    cat_item = build_catalog_item(
+        business_id=b_id,
+        item_type=ItemType.PRODUCT,
+        name="Hardware No Warehouse",
+        stock_tracking=True,
+        legacy_product_id=uuid.uuid4(),
+        default_warehouse_id=None,
+    )
+    invoice = build_invoice(
+        status=InvoiceStatus.DRAFT,
+        business_id=b_id,
+        catalog_item=cat_item,
+    )
+    uow = FakeSalesInvoiceUnitOfWork(
+        customer_repository=FakeCustomerRepository(build_customer(invoice.business_id)),
+        invoice_repository=FakeInvoiceRepository(invoice=invoice),
+    )
+    service = build_service(uow, CapturingEventDispatcher())
+
+    with pytest.raises(SalesInvoiceValidationException) as exc_info:
+        await service.issue_invoice(invoice.id)
+    assert "Warehouse could not be resolved" in str(exc_info.value)
 
 
 async def test_cancel_invoice() -> None:
-    """Service cancels an issued invoice."""
-    invoice = build_invoice(status=InvoiceStatus.ISSUED)
+    """Service cancels a draft invoice successfully."""
+    invoice = build_invoice(status=InvoiceStatus.DRAFT)
     dispatcher = CapturingEventDispatcher()
     uow = FakeSalesInvoiceUnitOfWork(
         customer_repository=FakeCustomerRepository(build_customer(invoice.business_id)),
@@ -500,6 +725,29 @@ async def test_cancel_invoice() -> None:
 
     assert response.status == InvoiceStatus.CANCELLED
     assert isinstance(dispatcher.events[0], InvoiceCancelledEvent)
+
+
+async def test_cancel_invoice_rejects_non_draft() -> None:
+    """Service rejects cancellation of non-draft invoices."""
+    for non_draft_status in (
+        InvoiceStatus.ISSUED,
+        InvoiceStatus.PARTIALLY_PAID,
+        InvoiceStatus.PAID,
+    ):
+        invoice = build_invoice(status=non_draft_status)
+        dispatcher = CapturingEventDispatcher()
+        uow = FakeSalesInvoiceUnitOfWork(
+            customer_repository=FakeCustomerRepository(
+                build_customer(invoice.business_id)
+            ),
+            invoice_repository=FakeInvoiceRepository(invoice=invoice),
+        )
+        service = build_service(uow, dispatcher)
+
+        with pytest.raises(SalesInvalidInvoiceStatusException):
+            await service.cancel_invoice(invoice.id)
+        assert invoice.status == non_draft_status
+        assert len(dispatcher.events) == 0
 
 
 async def test_mark_partially_paid() -> None:
@@ -588,3 +836,170 @@ async def test_rollback_on_create_failure() -> None:
 
     assert uow.committed is False
     assert uow.rolled_back is True
+
+
+async def test_invoice_create_request_agency_direction_fails_closed() -> None:
+    """Tripartite Section 10(1)(b) invoice request fails closed when directing
+    party is not the billed buyer."""
+    customer = build_customer()
+    with pytest.raises(DirectingPartyIndeterminateException) as exc_info:
+        build_invoice_request(
+            business_id=customer.business_id,
+            customer_id=customer.id,
+            is_bill_to_ship_to=True,
+            is_directing_party_billed_buyer=False,
+            direction_timing=DirectionTiming.BEFORE_MOVEMENT,
+            shipping_consignee_name="Consignee Ltd",
+            shipping_state_code="33",
+        )
+    assert exc_info.value.status_code == HTTPStatus.UNPROCESSABLE_ENTITY
+    assert exc_info.value.error_code == "sales.invoice_directing_party_indeterminate"
+
+
+async def test_invoice_create_request_missing_facts_fails_closed() -> None:
+    """Tripartite Section 10(1)(b) invoice request fails closed when required
+    consignee, shipping state, or timing is omitted."""
+    customer = build_customer()
+
+    # Missing direction timing
+    with pytest.raises(DirectionTimingUnestablishedException) as exc_info:
+        build_invoice_request(
+            business_id=customer.business_id,
+            customer_id=customer.id,
+            is_bill_to_ship_to=True,
+            is_directing_party_billed_buyer=True,
+            direction_timing=None,
+            shipping_consignee_name="Consignee Ltd",
+            shipping_state_code="33",
+        )
+    assert exc_info.value.status_code == HTTPStatus.UNPROCESSABLE_ENTITY
+    assert exc_info.value.error_code == "sales.invoice_direction_timing_unestablished"
+
+    # Missing consignee
+    with pytest.raises(ConsigneeRequiredException) as exc_info:
+        build_invoice_request(
+            business_id=customer.business_id,
+            customer_id=customer.id,
+            is_bill_to_ship_to=True,
+            is_directing_party_billed_buyer=True,
+            direction_timing=DirectionTiming.BEFORE_MOVEMENT,
+            shipping_consignee_name=None,
+            shipping_state_code="33",
+        )
+    assert exc_info.value.status_code == HTTPStatus.UNPROCESSABLE_ENTITY
+    assert exc_info.value.error_code == "sales.invoice_consignee_required"
+
+    # Missing shipping state
+    with pytest.raises(ShippingStateRequiredException) as exc_info:
+        build_invoice_request(
+            business_id=customer.business_id,
+            customer_id=customer.id,
+            is_bill_to_ship_to=True,
+            is_directing_party_billed_buyer=True,
+            direction_timing=DirectionTiming.BEFORE_MOVEMENT,
+            shipping_consignee_name="Consignee Ltd",
+            shipping_state_code=None,
+        )
+    assert exc_info.value.status_code == HTTPStatus.UNPROCESSABLE_ENTITY
+    assert exc_info.value.error_code == "sales.invoice_shipping_state_required"
+
+
+async def test_invoice_create_request_bill_to_ship_to_valid_succeeds() -> None:
+    """Valid tripartite Section 10(1)(b) request instantiates cleanly."""
+    customer = build_customer()
+    validated = build_invoice_request(
+        business_id=customer.business_id,
+        customer_id=customer.id,
+        is_bill_to_ship_to=True,
+        is_directing_party_billed_buyer=True,
+        direction_timing=DirectionTiming.BEFORE_MOVEMENT,
+        shipping_consignee_name="Consignee Ltd",
+        shipping_state_code="33",
+    )
+    assert validated.is_bill_to_ship_to is True
+    assert validated.is_directing_party_billed_buyer is True
+    assert validated.shipping_consignee_name == "Consignee Ltd"
+    assert validated.shipping_state_code == "33"
+
+
+async def test_invoice_create_request_omitted_directing_party_fails_closed() -> None:
+    """Tripartite Section 10(1)(b) invoice request fails closed when directing
+    party is omitted/indeterminate (default None)."""
+    customer = build_customer()
+    with pytest.raises(DirectingPartyIndeterminateException) as exc_info:
+        build_invoice_request(
+            business_id=customer.business_id,
+            customer_id=customer.id,
+            is_bill_to_ship_to=True,
+            # is_directing_party_billed_buyer omitted (defaults to None)
+            direction_timing=DirectionTiming.BEFORE_MOVEMENT,
+            shipping_consignee_name="Consignee Ltd",
+            shipping_state_code="33",
+        )
+    assert exc_info.value.status_code == HTTPStatus.UNPROCESSABLE_ENTITY
+    assert exc_info.value.error_code == "sales.invoice_directing_party_indeterminate"
+
+
+async def test_invoice_create_request_contradictory_facts_fails_closed() -> None:
+    """Request declaring is_bill_to_ship_to=False but asserting directing party
+    facts fails closed with DirectingPartyIndeterminateException."""
+    customer = build_customer()
+    with pytest.raises(DirectingPartyIndeterminateException) as exc_info:
+        build_invoice_request(
+            business_id=customer.business_id,
+            customer_id=customer.id,
+            is_bill_to_ship_to=False,
+            is_directing_party_billed_buyer=True,
+        )
+    assert exc_info.value.status_code == HTTPStatus.UNPROCESSABLE_ENTITY
+    assert exc_info.value.error_code == "sales.invoice_directing_party_indeterminate"
+
+
+async def test_invoice_update_request_omitted_directing_party_fails_closed() -> None:
+    """Updating invoice to bill-to/ship-to without affirming directing party
+    fails closed."""
+    with pytest.raises(DirectingPartyIndeterminateException) as exc_info:
+        InvoiceUpdateRequest(
+            is_bill_to_ship_to=True,
+            # is_directing_party_billed_buyer is None
+            direction_timing=DirectionTiming.BEFORE_MOVEMENT,
+            shipping_consignee_name="Consignee Ltd",
+            shipping_state_code="33",
+        )
+    assert exc_info.value.status_code == HTTPStatus.UNPROCESSABLE_ENTITY
+    assert exc_info.value.error_code == "sales.invoice_directing_party_indeterminate"
+
+
+async def test_invoice_update_request_contradictory_facts_fails_closed() -> None:
+    """Updating invoice with is_bill_to_ship_to=False but asserting direction
+    facts fails closed."""
+    with pytest.raises(DirectingPartyIndeterminateException) as exc_info:
+        InvoiceUpdateRequest(
+            is_bill_to_ship_to=False,
+            is_directing_party_billed_buyer=True,
+        )
+    assert exc_info.value.status_code == HTTPStatus.UNPROCESSABLE_ENTITY
+    assert exc_info.value.error_code == "sales.invoice_directing_party_indeterminate"
+
+
+async def test_invoice_update_request_valid_bill_to_ship_to_succeeds() -> None:
+    """Valid bill-to/ship-to update request succeeds cleanly."""
+    update_req = InvoiceUpdateRequest(
+        is_bill_to_ship_to=True,
+        is_directing_party_billed_buyer=True,
+        direction_timing=DirectionTiming.BEFORE_MOVEMENT,
+        shipping_consignee_name="Consignee Ltd",
+        shipping_state_code="33",
+    )
+    assert update_req.is_bill_to_ship_to is True
+    assert update_req.is_directing_party_billed_buyer is True
+
+
+async def test_invoice_update_standard_unspecified_party_succeeds() -> None:
+    """Standard update request with unspecified directing party succeeds."""
+    update_req = InvoiceUpdateRequest(
+        notes="Updated notes",
+    )
+    assert update_req.is_bill_to_ship_to is None
+    assert update_req.is_directing_party_billed_buyer is None
+    assert update_req.notes == "Updated notes"

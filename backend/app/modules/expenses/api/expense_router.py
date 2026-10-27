@@ -42,7 +42,10 @@ ExpenseUnitOfWorkDependency = Annotated[Any, Depends(get_expense_unit_of_work)]
         HTTPStatus.FORBIDDEN: {"model": ErrorResponse},
         HTTPStatus.NOT_FOUND: {"model": ErrorResponse},
         HTTPStatus.CONFLICT: {"model": ErrorResponse},
-        HTTPStatus.UNPROCESSABLE_ENTITY: {"model": ErrorResponse},
+        HTTPStatus.BAD_REQUEST: {
+            "model": ErrorResponse,
+            "description": "Request validation failed.",
+        },
     },
 )
 async def create_expense(
@@ -175,7 +178,10 @@ async def get_expense(
         HTTPStatus.FORBIDDEN: {"model": ErrorResponse},
         HTTPStatus.NOT_FOUND: {"model": ErrorResponse},
         HTTPStatus.CONFLICT: {"model": ErrorResponse},
-        HTTPStatus.UNPROCESSABLE_ENTITY: {"model": ErrorResponse},
+        HTTPStatus.BAD_REQUEST: {
+            "model": ErrorResponse,
+            "description": "Request validation failed.",
+        },
     },
 )
 async def update_expense(

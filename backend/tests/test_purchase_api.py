@@ -17,6 +17,7 @@ from app.modules.purchases.api.dependencies import (
     get_purchase_unit_of_work,
     get_supplier_service,
 )
+from app.modules.purchases.exceptions import InvalidPurchaseStatusException
 from app.modules.purchases.models import (
     PurchaseInvoice,
     PurchaseInvoiceLine,
@@ -33,6 +34,7 @@ from app.modules.purchases.schemas import (
     SupplierUpdate,
 )
 
+HTTP_CONFLICT = 409
 HTTP_CREATED = 201
 HTTP_FORBIDDEN = 403
 HTTP_NO_CONTENT = 204
@@ -183,9 +185,15 @@ class FakeSupplierService:
 class FakePurchaseService:
     """Fake purchase service for API tests."""
 
-    def __init__(self, purchase: PurchaseInvoiceResponse) -> None:
+    def __init__(
+        self,
+        purchase: PurchaseInvoiceResponse,
+        *,
+        cancel_exception: Exception | None = None,
+    ) -> None:
         """Initialize with a purchase response."""
         self.purchase = purchase
+        self.cancel_exception = cancel_exception
         self.created_request: PurchaseInvoiceCreate | None = None
         self.updated_request: PurchaseInvoiceUpdate | None = None
         self.business_id: uuid.UUID | None = None
@@ -233,7 +241,9 @@ class FakePurchaseService:
         return self.purchase.model_copy(update={"status": PurchaseStatus.PAID})
 
     async def cancel_purchase(self, purchase_id: uuid.UUID) -> PurchaseInvoiceResponse:
-        """Return cancelled purchase."""
+        """Return cancelled purchase or raise cancel_exception."""
+        if self.cancel_exception is not None:
+            raise self.cancel_exception
         self.cancelled_purchase_id = purchase_id
         return self.purchase.model_copy(update={"status": PurchaseStatus.CANCELLED})
 
@@ -369,6 +379,7 @@ def build_client(
     *,
     authenticated: bool = True,
     is_member: bool = True,
+    cancel_exception: Exception | None = None,
 ) -> tuple[
     TestClient,
     FakePurchaseUnitOfWork,
@@ -388,7 +399,8 @@ def build_client(
     )
     supplier_service = FakeSupplierService(SupplierResponse.model_validate(supplier))
     purchase_service = FakePurchaseService(
-        PurchaseInvoiceResponse.model_validate(purchase)
+        PurchaseInvoiceResponse.model_validate(purchase),
+        cancel_exception=cancel_exception,
     )
     user = build_user()
 
@@ -512,6 +524,26 @@ def test_purchase_endpoints_and_status_transitions() -> None:
     assert purchase_service.cancelled_purchase_id == uow.purchase_invoices.purchase.id
 
 
+def test_cancel_purchase_rejects_non_draft_status() -> None:
+    """AC-AIS Track A: Cancelling a non-draft purchase returns 409 Conflict."""
+    client, uow, _supplier_service, _purchase_service, _user = build_client(
+        cancel_exception=InvalidPurchaseStatusException(
+            "Cannot cancel purchase in approved status",
+            details={"current_status": "approved", "target_status": "cancelled"},
+        )
+    )
+    purchase_id = uow.purchase_invoices.purchase.id
+
+    with client:
+        response = client.post(f"/api/v1/purchases/{purchase_id}/cancel")
+
+    assert response.status_code == HTTP_CONFLICT
+    body = response.json()
+    assert body["success"] is False
+    assert body["data"]["code"] == "purchases.invalid_purchase_status"
+    assert "approved status" in body["message"]
+
+
 def test_purchase_api_requires_authentication() -> None:
     """Purchase endpoints require authentication."""
     client, uow, _supplier_service, _purchase_service, _user = build_client(
@@ -534,9 +566,7 @@ def test_purchase_api_business_isolation() -> None:
     )
 
     with client:
-        response = client.get(
-            f"/api/v1/purchases/{uow.purchase_invoices.purchase.id}"
-        )
+        response = client.get(f"/api/v1/purchases/{uow.purchase_invoices.purchase.id}")
 
     assert response.status_code == HTTP_FORBIDDEN
     assert response.json()["data"]["code"] == "business.not_member"

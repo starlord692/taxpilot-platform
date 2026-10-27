@@ -4,14 +4,23 @@ import uuid
 from collections.abc import Callable
 from datetime import date
 from decimal import ROUND_HALF_UP, Decimal
-from typing import Protocol
+from typing import Any, Protocol
 
 from app.common.events import EventDispatcher
 from app.common.pagination import Page, PaginationParams
+from app.common.unit_of_work import supports_uow
+from app.modules.business.models import Business
+from app.modules.gst.jurisdictions import validate_state_code
 from app.modules.gst.services import (
     GSTCalculationLineInput,
     GSTCalculationService,
     GSTSupplyType,
+)
+from app.modules.gst.services.pos_resolution_service import (
+    ContradictoryPOSException,
+    PlaceOfSupplyResolutionService,
+    SupplyResolutionContext,
+    TransactionClassificationIndeterminateException,
 )
 from app.modules.purchases.events import (
     PurchaseApprovedEvent,
@@ -45,6 +54,7 @@ from app.modules.purchases.schemas import (
 
 MONEY_PLACES = Decimal("0.01")
 PURCHASE_NUMBER_ATTEMPTS = 10
+STATE_CODE_DIGIT_COUNT = 2
 
 
 class PurchaseSupplierRepository(Protocol):
@@ -135,12 +145,21 @@ class PurchaseLinePersistenceRepository(Protocol):
         ...
 
 
+class PurchaseBusinessRepository(Protocol):
+    """Business repository behavior required by purchase service."""
+
+    async def get_by_id(self, business_id: uuid.UUID) -> Business | None:
+        """Return a business aggregate by UUID."""
+        ...
+
+
 class PurchaseUnitOfWork(Protocol):
     """Unit of Work contract required by purchase service."""
 
     suppliers: PurchaseSupplierRepository
     purchase_invoices: PurchasePersistenceRepository
     purchase_invoice_lines: PurchaseLinePersistenceRepository
+    businesses: PurchaseBusinessRepository
 
     async def __aenter__(self) -> "PurchaseUnitOfWork":
         """Enter the purchase transaction scope."""
@@ -166,11 +185,19 @@ UnitOfWorkFactory = Callable[[], PurchaseUnitOfWork]
 class PurchaseAccountingKernel(Protocol):
     """Accounting kernel behavior required by purchase workflows."""
 
-    async def record_purchase_invoice(self, purchase_id: uuid.UUID) -> object:
+    async def record_purchase_invoice(
+        self,
+        purchase_id: uuid.UUID,
+        uow: Any | None = None,
+    ) -> object:
         """Post an approved purchase invoice to accounting."""
         ...
 
-    async def record_supplier_payment(self, purchase_id: uuid.UUID) -> object:
+    async def record_supplier_payment(
+        self,
+        purchase_id: uuid.UUID,
+        uow: Any | None = None,
+    ) -> object:
         """Post a paid purchase invoice payment to accounting."""
         ...
 
@@ -178,7 +205,13 @@ class PurchaseAccountingKernel(Protocol):
 class PurchaseStockEngine(Protocol):
     """Inventory integration behavior required by purchase workflows."""
 
-    async def receive_purchase(self, purchase_invoice: PurchaseInvoice) -> object:
+    async def receive_purchase(
+        self,
+        purchase_invoice: PurchaseInvoice,
+        *,
+        warehouse_id: uuid.UUID | None = None,
+        uow: Any | None = None,
+    ) -> object:
         """Receive purchase stock movements."""
         ...
 
@@ -194,6 +227,7 @@ class PurchaseService:
         accounting_kernel: PurchaseAccountingKernel | None = None,
         stock_engine: PurchaseStockEngine | None = None,
         gst_calculation_service: GSTCalculationService | None = None,
+        pos_resolution_service: PlaceOfSupplyResolutionService | None = None,
     ) -> None:
         """Initialize service dependencies."""
         self._unit_of_work_factory = unit_of_work_factory
@@ -202,6 +236,9 @@ class PurchaseService:
         self._stock_engine = stock_engine
         self._gst_calculation_service = (
             gst_calculation_service or GSTCalculationService(event_dispatcher)
+        )
+        self._pos_resolution_service = (
+            pos_resolution_service or PlaceOfSupplyResolutionService()
         )
 
     async def create_purchase(
@@ -213,7 +250,7 @@ class PurchaseService:
         """Create a draft purchase invoice and publish an event."""
         validated_request = PurchaseInvoiceCreate.model_validate(request)
         async with self._unit_of_work_factory() as uow:
-            await self._validate_supplier(
+            supplier = await self._validate_supplier(
                 uow,
                 validated_request.supplier_id,
                 business_id,
@@ -229,20 +266,30 @@ class PurchaseService:
                 business_id,
                 validated_request.invoice_date,
             )
-            prepared_request = self._prepare_create_request(validated_request)
+            supply_type = await self._determine_supply_type(
+                uow,
+                business_id=business_id,
+                supplier=supplier,
+                lines=validated_request.lines,
+            )
+            prepared_request = self._prepare_create_request(
+                validated_request,
+                supply_type=supply_type,
+            )
             purchase_invoice = await uow.purchase_invoices.create(
                 prepared_request,
                 business_id=business_id,
                 purchase_number=purchase_number,
             )
+            await uow.commit()
             await self._event_dispatcher.dispatch(
                 PurchaseCreatedEvent(
                     purchase_id=purchase_invoice.id,
                     business_id=purchase_invoice.business_id,
                 )
             )
-            await uow.commit()
-        return PurchaseInvoiceResponse.model_validate(purchase_invoice)
+            reloaded = await uow.purchase_invoices.get_by_id(purchase_invoice.id)
+            return PurchaseInvoiceResponse.model_validate(reloaded or purchase_invoice)
 
     async def update_purchase(
         self,
@@ -256,7 +303,7 @@ class PurchaseService:
             self._ensure_editable(purchase_invoice)
             self._ensure_no_direct_status_update(validated_request)
             supplier_id = validated_request.supplier_id or purchase_invoice.supplier_id
-            await self._validate_supplier(
+            supplier = await self._validate_supplier(
                 uow,
                 supplier_id,
                 purchase_invoice.business_id,
@@ -271,9 +318,21 @@ class PurchaseService:
                 invoice_number=invoice_number,
                 current_purchase_id=purchase_invoice.id,
             )
+            lines_to_check = (
+                self._line_updates_to_create_requests(validated_request)
+                if validated_request.lines is not None
+                else []
+            )
+            supply_type = await self._determine_supply_type(
+                uow,
+                business_id=purchase_invoice.business_id,
+                supplier=supplier,
+                lines=lines_to_check,
+            )
             prepared_request = self._prepare_update_request(
                 purchase_invoice,
                 validated_request,
+                supply_type=supply_type,
             )
             purchase_invoice = await uow.purchase_invoices.update(
                 purchase_invoice,
@@ -291,28 +350,67 @@ class PurchaseService:
                         purchase_invoice_id=purchase_invoice.id,
                     )
                     purchase_invoice.lines.append(line)
+            await uow.commit()
             await self._event_dispatcher.dispatch(
                 PurchaseUpdatedEvent(
                     purchase_id=purchase_invoice.id,
                     business_id=purchase_invoice.business_id,
                 )
             )
-            await uow.commit()
-        return PurchaseInvoiceResponse.model_validate(purchase_invoice)
+            reloaded = await uow.purchase_invoices.get_by_id(purchase_invoice.id)
+            return PurchaseInvoiceResponse.model_validate(reloaded or purchase_invoice)
 
     async def approve_purchase(self, purchase_id: uuid.UUID) -> PurchaseInvoiceResponse:
-        """Approve a draft purchase invoice."""
-        purchase_invoice = await self._transition_purchase_model(
-            purchase_id,
-            target_status=PurchaseStatus.APPROVED,
-            allowed_statuses={PurchaseStatus.DRAFT},
-            event_name="approved",
-        )
-        if self._stock_engine is not None:
-            await self._stock_engine.receive_purchase(purchase_invoice)
-        if self._accounting_kernel is not None:
-            await self._accounting_kernel.record_purchase_invoice(purchase_id)
-        return PurchaseInvoiceResponse.model_validate(purchase_invoice)
+        """Approve a draft purchase invoice within a unified transaction boundary."""
+        async with self._unit_of_work_factory() as uow:
+            purchase_invoice = await self._get_existing_purchase(uow, purchase_id)
+            if purchase_invoice.status != PurchaseStatus.DRAFT:
+                raise InvalidPurchaseStatusException(
+                    "Purchase status transition is not allowed",
+                    details={
+                        "purchase_id": str(purchase_id),
+                        "status": purchase_invoice.status.value,
+                        "target_status": PurchaseStatus.APPROVED.value,
+                    },
+                )
+
+            purchase_invoice = await uow.purchase_invoices.update(
+                purchase_invoice,
+                PurchaseInvoiceUpdate(status=PurchaseStatus.APPROVED),
+            )
+
+            if self._stock_engine is not None:
+                if supports_uow(self._stock_engine.receive_purchase):
+                    await self._stock_engine.receive_purchase(purchase_invoice, uow=uow)
+                else:
+                    await self._stock_engine.receive_purchase(purchase_invoice)
+
+            if self._accounting_kernel is not None:
+                if supports_uow(self._accounting_kernel.record_purchase_invoice):
+                    await self._accounting_kernel.record_purchase_invoice(
+                        purchase_id,
+                        uow=uow,
+                    )
+                else:
+                    await self._accounting_kernel.record_purchase_invoice(purchase_id)
+
+            if hasattr(uow, "outbox") and uow.outbox is not None:
+                await uow.outbox.add(
+                    business_id=purchase_invoice.business_id,
+                    event_name="purchases.invoice.approved",
+                    event_payload={
+                        "purchase_id": str(purchase_invoice.id),
+                        "purchase_number": purchase_invoice.purchase_number,
+                        "business_id": str(purchase_invoice.business_id),
+                        "total_amount": str(purchase_invoice.total_amount),
+                    },
+                )
+
+            await uow.commit()
+
+            await self._dispatch_status_event(purchase_invoice, "approved")
+            reloaded = await uow.purchase_invoices.get_by_id(purchase_invoice.id)
+            return PurchaseInvoiceResponse.model_validate(reloaded or purchase_invoice)
 
     async def mark_received(self, purchase_id: uuid.UUID) -> PurchaseInvoiceResponse:
         """Mark an approved purchase invoice as received."""
@@ -324,27 +422,57 @@ class PurchaseService:
         )
 
     async def mark_paid(self, purchase_id: uuid.UUID) -> PurchaseInvoiceResponse:
-        """Mark a received purchase invoice as paid."""
-        response = await self._transition_purchase(
-            purchase_id,
-            target_status=PurchaseStatus.PAID,
-            allowed_statuses={PurchaseStatus.RECEIVED},
-            event_name="paid",
-        )
-        if self._accounting_kernel is not None:
-            await self._accounting_kernel.record_supplier_payment(purchase_id)
-        return response
+        """Mark a received purchase invoice as paid within a unified boundary."""
+        async with self._unit_of_work_factory() as uow:
+            purchase_invoice = await self._get_existing_purchase(uow, purchase_id)
+            if purchase_invoice.status != PurchaseStatus.RECEIVED:
+                raise InvalidPurchaseStatusException(
+                    "Purchase status transition is not allowed",
+                    details={
+                        "purchase_id": str(purchase_id),
+                        "status": purchase_invoice.status.value,
+                        "target_status": PurchaseStatus.PAID.value,
+                    },
+                )
+
+            purchase_invoice = await uow.purchase_invoices.update(
+                purchase_invoice,
+                PurchaseInvoiceUpdate(status=PurchaseStatus.PAID),
+            )
+
+            if self._accounting_kernel is not None:
+                if supports_uow(self._accounting_kernel.record_supplier_payment):
+                    await self._accounting_kernel.record_supplier_payment(
+                        purchase_id,
+                        uow=uow,
+                    )
+                else:
+                    await self._accounting_kernel.record_supplier_payment(purchase_id)
+
+            if hasattr(uow, "outbox") and uow.outbox is not None:
+                await uow.outbox.add(
+                    business_id=purchase_invoice.business_id,
+                    event_name="purchases.invoice.paid",
+                    event_payload={
+                        "purchase_id": str(purchase_invoice.id),
+                        "purchase_number": purchase_invoice.purchase_number,
+                        "business_id": str(purchase_invoice.business_id),
+                        "total_amount": str(purchase_invoice.total_amount),
+                    },
+                )
+
+            await uow.commit()
+
+            await self._dispatch_status_event(purchase_invoice, "paid")
+            reloaded = await uow.purchase_invoices.get_by_id(purchase_invoice.id)
+            return PurchaseInvoiceResponse.model_validate(reloaded or purchase_invoice)
 
     async def cancel_purchase(self, purchase_id: uuid.UUID) -> PurchaseInvoiceResponse:
-        """Cancel a purchase invoice before payment."""
+        """Cancel a draft purchase invoice."""
         return await self._transition_purchase(
             purchase_id,
             target_status=PurchaseStatus.CANCELLED,
-            allowed_statuses={
-                PurchaseStatus.DRAFT,
-                PurchaseStatus.APPROVED,
-                PurchaseStatus.RECEIVED,
-            },
+            allowed_statuses={PurchaseStatus.DRAFT},
             event_name="cancelled",
         )
 
@@ -352,8 +480,9 @@ class PurchaseService:
         """Return a purchase invoice by UUID."""
         async with self._unit_of_work_factory() as uow:
             purchase_invoice = await self._get_existing_purchase(uow, purchase_id)
+            response = PurchaseInvoiceResponse.model_validate(purchase_invoice)
             await uow.commit()
-        return PurchaseInvoiceResponse.model_validate(purchase_invoice)
+            return response
 
     async def list_purchases(
         self,
@@ -393,12 +522,13 @@ class PurchaseService:
                     purchase_number=purchase_number,
                     invoice_number=invoice_number,
                 )
-            await uow.commit()
-        return Page.create(
-            items=[
+            items = [
                 PurchaseInvoiceResponse.model_validate(purchase)
                 for purchase in page.items
-            ],
+            ]
+            await uow.commit()
+        return Page.create(
+            items=items,
             total=page.meta.total,
             params=pagination or PaginationParams(),
         )
@@ -412,13 +542,25 @@ class PurchaseService:
         event_name: str,
     ) -> PurchaseInvoiceResponse:
         """Apply a purchase lifecycle status transition."""
-        purchase_invoice = await self._transition_purchase_model(
-            purchase_id,
-            target_status=target_status,
-            allowed_statuses=allowed_statuses,
-            event_name=event_name,
-        )
-        return PurchaseInvoiceResponse.model_validate(purchase_invoice)
+        async with self._unit_of_work_factory() as uow:
+            purchase_invoice = await self._get_existing_purchase(uow, purchase_id)
+            if purchase_invoice.status not in allowed_statuses:
+                raise InvalidPurchaseStatusException(
+                    "Purchase status transition is not allowed",
+                    details={
+                        "purchase_id": str(purchase_id),
+                        "status": purchase_invoice.status.value,
+                        "target_status": target_status.value,
+                    },
+                )
+            purchase_invoice = await uow.purchase_invoices.update(
+                purchase_invoice,
+                PurchaseInvoiceUpdate(status=target_status),
+            )
+            await uow.commit()
+            await self._dispatch_status_event(purchase_invoice, event_name)
+            reloaded = await uow.purchase_invoices.get_by_id(purchase_invoice.id)
+            return PurchaseInvoiceResponse.model_validate(reloaded or purchase_invoice)
 
     async def _transition_purchase_model(
         self,
@@ -444,8 +586,8 @@ class PurchaseService:
                 purchase_invoice,
                 PurchaseInvoiceUpdate(status=target_status),
             )
-            await self._dispatch_status_event(purchase_invoice, event_name)
             await uow.commit()
+            await self._dispatch_status_event(purchase_invoice, event_name)
         return purchase_invoice
 
     async def _get_existing_purchase(
@@ -557,25 +699,169 @@ class PurchaseService:
                 details={"status": request.status.value},
             )
 
+    async def _resolve_business_location(
+        self,
+        uow: Any,
+        business_id: uuid.UUID,
+    ) -> tuple[str | None, str]:
+        """Resolve (buyer_gstin, buyer_state_code) for the recipient business."""
+        if not hasattr(uow, "businesses") or uow.businesses is None:
+            raise TransactionClassificationIndeterminateException(
+                "Unit of Work lacks business repository for location resolution",
+                details={"business_id": str(business_id)},
+            )
+
+        business = await uow.businesses.get_by_id(business_id)
+        if business is None:
+            raise TransactionClassificationIndeterminateException(
+                "Recipient business not found",
+                details={"business_id": str(business_id)},
+            )
+
+        buyer_gstin: str | None = None
+        buyer_state: str | None = None
+
+        tax_profile = getattr(business, "tax_profile", None)
+        if tax_profile is not None and tax_profile.gstin:
+            gstin_str = str(tax_profile.gstin).strip()
+            if len(gstin_str) >= STATE_CODE_DIGIT_COUNT:
+                buyer_gstin = gstin_str
+                buyer_state = gstin_str[:STATE_CODE_DIGIT_COUNT]
+
+        if buyer_state is None:
+            address = getattr(business, "address", None)
+            if address is not None and address.state:
+                state_str = str(address.state).strip()
+                if (
+                    len(state_str) == STATE_CODE_DIGIT_COUNT
+                    and state_str.isdigit()
+                ):
+                    buyer_state = state_str
+
+        if buyer_state is None:
+            raise TransactionClassificationIndeterminateException(
+                "Business lacks active GST registration and address state",
+                details={"business_id": str(business_id)},
+            )
+
+        validated_buyer_state = validate_state_code(buyer_state)
+        return buyer_gstin, validated_buyer_state
+
+    def _resolve_supplier_location(
+        self,
+        supplier: Supplier | None,
+    ) -> str:
+        """Resolve validated 2-digit GST state code of the supplier."""
+        if supplier is None:
+            raise TransactionClassificationIndeterminateException(
+                "Supplier is required for GST determination",
+            )
+
+        supplier_state: str | None = None
+        if supplier.gstin:
+            gstin_str = str(supplier.gstin).strip()
+            if len(gstin_str) >= STATE_CODE_DIGIT_COUNT:
+                supplier_state = gstin_str[:STATE_CODE_DIGIT_COUNT]
+
+        if supplier_state is None and supplier.address:
+            address_str = str(supplier.address).strip()
+            if (
+                len(address_str) == STATE_CODE_DIGIT_COUNT
+                and address_str.isdigit()
+            ):
+                supplier_state = address_str
+
+        if supplier_state is None:
+            raise TransactionClassificationIndeterminateException(
+                "Supplier lacks valid GSTIN or determinable location evidence",
+                details={"supplier_id": str(supplier.id)},
+            )
+
+        return validate_state_code(supplier_state)
+
+    async def _determine_supply_type(
+        self,
+        uow: Any,
+        *,
+        business_id: uuid.UUID,
+        supplier: Supplier | None,
+        lines: list[PurchaseInvoiceLineCreate],
+    ) -> GSTSupplyType:
+        """Deterministically determine if purchase supply is intra or inter-state."""
+        supplier_state = self._resolve_supplier_location(supplier)
+        buyer_gstin, buyer_state = await self._resolve_business_location(
+            uow, business_id
+        )
+
+        ctx = SupplyResolutionContext(
+            supplier_state_code=supplier_state,
+            buyer_gstin=buyer_gstin,
+            buyer_state_code=buyer_state,
+        )
+        resolution = self._pos_resolution_service.resolve_supply(ctx)
+
+        if resolution.is_utgst:
+            raise PurchaseValidationException(
+                "Intra-state UTGST purchases are unsupported in the current schema",
+                details={
+                    "jurisdiction": resolution.place_of_supply,
+                    "is_utgst": True,
+                },
+            )
+
+        determined_supply_type = (
+            GSTSupplyType.INTRA_STATE
+            if resolution.is_intra_state
+            else GSTSupplyType.INTER_STATE
+        )
+
+        # Contradictory location / line assertion check
+        if (
+            determined_supply_type == GSTSupplyType.INTER_STATE
+            and any(
+                line.cgst_amount > Decimal("0.00")
+                or line.sgst_amount > Decimal("0.00")
+                for line in lines
+            )
+        ):
+            raise ContradictoryPOSException(
+                "Inter-state purchase cannot include CGST or SGST line amounts",
+                details={"supply_type": determined_supply_type.value},
+            )
+        elif (
+            determined_supply_type == GSTSupplyType.INTRA_STATE
+            and any(line.igst_amount > Decimal("0.00") for line in lines)
+        ):
+            raise ContradictoryPOSException(
+                "Intra-state purchase cannot include IGST line amounts",
+                details={"supply_type": determined_supply_type.value},
+            )
+
+        return determined_supply_type
+
     def _prepare_create_request(
         self,
         request: PurchaseInvoiceCreate,
+        *,
+        supply_type: GSTSupplyType = GSTSupplyType.INTRA_STATE,
     ) -> PurchaseInvoiceCreate:
         """Calculate purchase totals before persistence."""
-        totals = self._calculate_totals(request.lines)
+        totals = self._calculate_totals(request.lines, supply_type=supply_type)
         return request.model_copy(update={"status": PurchaseStatus.DRAFT, **totals})
 
     def _prepare_update_request(
         self,
         purchase_invoice: PurchaseInvoice,
         request: PurchaseInvoiceUpdate,
+        *,
+        supply_type: GSTSupplyType = GSTSupplyType.INTRA_STATE,
     ) -> PurchaseInvoiceUpdate:
         """Calculate purchase update totals when lines are supplied."""
         _ = purchase_invoice
         if request.lines is None:
             return request
         line_requests = self._line_updates_to_create_requests(request)
-        totals = self._calculate_totals(line_requests)
+        totals = self._calculate_totals(line_requests, supply_type=supply_type)
         return request.model_copy(update=totals)
 
     def _line_updates_to_create_requests(
@@ -614,6 +900,8 @@ class PurchaseService:
     def _calculate_totals(
         self,
         lines: list[PurchaseInvoiceLineCreate],
+        *,
+        supply_type: GSTSupplyType = GSTSupplyType.INTRA_STATE,
     ) -> dict[str, Decimal | list[PurchaseInvoiceLineCreate]]:
         """Calculate purchase line totals and aggregate totals."""
         if not lines:
@@ -632,8 +920,9 @@ class PurchaseService:
                     quantity=Decimal("1.00"),
                     unit_amount=line_subtotal,
                     tax_rate=line.tax_rate,
-                    supply_type=GSTSupplyType.INTRA_STATE,
-                )
+                    supply_type=supply_type,
+                ),
+                default_supply_type=supply_type,
             )
             prepared_lines.append(
                 line.model_copy(

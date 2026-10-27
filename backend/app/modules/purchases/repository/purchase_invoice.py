@@ -68,8 +68,8 @@ class PurchaseInvoiceRepository(BaseRepository[PurchaseInvoice]):
         self,
         purchase_invoice_id: uuid.UUID,
     ) -> PurchaseInvoice | None:
-        """Return a non-deleted purchase invoice by UUID."""
-        statement = self._base_statement().where(
+        """Return a non-deleted purchase invoice by UUID with relationships loaded."""
+        statement = self._detail_statement().where(
             PurchaseInvoice.id == purchase_invoice_id
         )
         result = await self.session.execute(statement)
@@ -81,8 +81,11 @@ class PurchaseInvoiceRepository(BaseRepository[PurchaseInvoice]):
         business_id: uuid.UUID,
         purchase_number: str,
     ) -> PurchaseInvoice | None:
-        """Return a purchase invoice by business-scoped purchase number."""
-        statement = self._base_statement().where(
+        """Return a purchase invoice by business-scoped purchase number.
+
+        Detail relationships (lines and supplier) are loaded.
+        """
+        statement = self._detail_statement().where(
             PurchaseInvoice.business_id == business_id,
             PurchaseInvoice.purchase_number == purchase_number,
         )
@@ -95,8 +98,11 @@ class PurchaseInvoiceRepository(BaseRepository[PurchaseInvoice]):
         business_id: uuid.UUID,
         invoice_number: str,
     ) -> PurchaseInvoice | None:
-        """Return a purchase invoice by supplier invoice number."""
-        statement = self._base_statement().where(
+        """Return a purchase invoice by supplier invoice number.
+
+        Detail relationships (lines and supplier) are loaded.
+        """
+        statement = self._detail_statement().where(
             PurchaseInvoice.business_id == business_id,
             PurchaseInvoice.invoice_number == invoice_number,
         )
@@ -120,7 +126,7 @@ class PurchaseInvoiceRepository(BaseRepository[PurchaseInvoice]):
         invoice_number: str | None = None,
     ) -> Page[PurchaseInvoice]:
         """Return paginated purchase invoices with optional filters."""
-        statement = self._base_statement().where(
+        statement = self._summary_statement().where(
             PurchaseInvoice.business_id == business_id
         )
         statement = self._apply_optional_filters(
@@ -147,7 +153,7 @@ class PurchaseInvoiceRepository(BaseRepository[PurchaseInvoice]):
     ) -> Page[PurchaseInvoice]:
         """Search purchase invoices by purchase number, invoice number, or notes."""
         search_pattern = f"%{query.strip()}%"
-        statement = self._base_statement().where(
+        statement = self._summary_statement().where(
             PurchaseInvoice.business_id == business_id,
             or_(
                 PurchaseInvoice.purchase_number.ilike(search_pattern),
@@ -166,7 +172,7 @@ class PurchaseInvoiceRepository(BaseRepository[PurchaseInvoice]):
         invoice_number: str | None = None,
     ) -> bool:
         """Return whether a purchase invoice exists for supplied business keys."""
-        statement = self._base_statement().where(
+        statement = self._summary_statement().where(
             PurchaseInvoice.business_id == business_id
         )
         if purchase_number is not None:
@@ -201,12 +207,24 @@ class PurchaseInvoiceRepository(BaseRepository[PurchaseInvoice]):
         self,
         statement: Select[tuple[PurchaseInvoice]],
     ) -> int:
-        """Count rows from a selectable statement."""
-        count_statement = select(func.count()).select_from(statement.subquery())
+        """Count rows from a selectable statement using public SQLAlchemy API."""
+        clean_stmt = statement.order_by(None).offset(None).limit(None)
+        count_statement = select(func.count()).select_from(clean_stmt.subquery())
         result = await self.session.execute(count_statement)
         return int(result.scalar_one())
 
-    def _base_statement(self) -> Select[tuple[PurchaseInvoice]]:
+    def _summary_statement(self) -> Select[tuple[PurchaseInvoice]]:
+        """Return summary purchase invoice select with relationships loaded."""
+        return (
+            select(PurchaseInvoice)
+            .options(
+                selectinload(PurchaseInvoice.lines),
+                selectinload(PurchaseInvoice.supplier),
+            )
+            .where(PurchaseInvoice.is_deleted.is_(False))
+        )
+
+    def _detail_statement(self) -> Select[tuple[PurchaseInvoice]]:
         """Return standard purchase invoice select with relationships loaded."""
         return (
             select(PurchaseInvoice)
@@ -216,6 +234,10 @@ class PurchaseInvoiceRepository(BaseRepository[PurchaseInvoice]):
             )
             .where(PurchaseInvoice.is_deleted.is_(False))
         )
+
+    def _base_statement(self) -> Select[tuple[PurchaseInvoice]]:
+        """Backwards-compatibility alias returning detail statement."""
+        return self._detail_statement()
 
     def _apply_optional_filters(
         self,

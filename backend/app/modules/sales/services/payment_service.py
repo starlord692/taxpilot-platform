@@ -3,9 +3,10 @@
 import uuid
 from collections.abc import Callable
 from decimal import Decimal
-from typing import Protocol
+from typing import Any, Protocol
 
 from app.common.events import EventDispatcher
+from app.common.unit_of_work import supports_uow
 from app.modules.sales.events import (
     PaymentDeletedEvent,
     PaymentRecordedEvent,
@@ -72,6 +73,7 @@ class PaymentUnitOfWork(Protocol):
 
     sales_invoices: PaymentInvoiceRepository
     payments: PaymentPersistenceRepository
+    ledgers: Any | None = None
 
     async def __aenter__(self) -> "PaymentUnitOfWork":
         """Enter the payment transaction scope."""
@@ -97,7 +99,11 @@ UnitOfWorkFactory = Callable[[], PaymentUnitOfWork]
 class PaymentAccountingKernel(Protocol):
     """Accounting integration behavior required by payment service."""
 
-    async def record_customer_payment(self, payment_id: uuid.UUID) -> object:
+    async def record_customer_payment(
+        self,
+        payment_id: uuid.UUID,
+        uow: Any | None = None,
+    ) -> object:
         """Post a customer payment to accounting."""
         ...
 
@@ -118,7 +124,7 @@ class PaymentService:
         self._accounting_kernel = accounting_kernel
 
     async def record_payment(self, request: PaymentCreateRequest) -> PaymentResponse:
-        """Record a payment against an invoice."""
+        """Record a payment against an invoice within a unified transaction boundary."""
         validated_request = PaymentCreateRequest.model_validate(request)
         async with self._unit_of_work_factory() as uow:
             invoice = await self._get_payable_invoice(uow, validated_request.invoice_id)
@@ -135,6 +141,29 @@ class PaymentService:
                 invoice,
                 paid_before + payment.amount,
             )
+            if self._accounting_kernel is not None:
+                if supports_uow(self._accounting_kernel.record_customer_payment):
+                    await self._accounting_kernel.record_customer_payment(
+                        payment.id,
+                        uow=uow,
+                    )
+                else:
+                    await self._accounting_kernel.record_customer_payment(payment.id)
+
+            if hasattr(uow, "outbox") and uow.outbox is not None:
+                await uow.outbox.add(
+                    business_id=invoice.business_id,
+                    event_name="sales.payment.recorded",
+                    event_payload={
+                        "payment_id": str(payment.id),
+                        "invoice_id": str(invoice.id),
+                        "business_id": str(invoice.business_id),
+                        "amount": str(payment.amount),
+                    },
+                )
+
+            await uow.commit()
+
             await self._event_dispatcher.dispatch(
                 PaymentRecordedEvent(
                     payment_id=payment.id,
@@ -142,11 +171,7 @@ class PaymentService:
                     business_id=invoice.business_id,
                 )
             )
-            await uow.commit()
-
-        if self._accounting_kernel is not None:
-            await self._accounting_kernel.record_customer_payment(payment.id)
-        return PaymentResponse.model_validate(payment)
+            return PaymentResponse.model_validate(payment)
 
     async def update_payment(
         self,
@@ -174,6 +199,7 @@ class PaymentService:
                 invoice,
                 paid_without_payment + payment.amount,
             )
+            await uow.commit()
             await self._event_dispatcher.dispatch(
                 PaymentUpdatedEvent(
                     payment_id=payment.id,
@@ -181,20 +207,28 @@ class PaymentService:
                     business_id=invoice.business_id,
                 )
             )
-            await uow.commit()
-
-        return PaymentResponse.model_validate(payment)
+            return PaymentResponse.model_validate(payment)
 
     async def delete_payment(self, payment_id: uuid.UUID) -> None:
         """Soft-delete a payment and update invoice status."""
         async with self._unit_of_work_factory() as uow:
             payment = await self._get_existing_payment(uow, payment_id)
+            if (
+                hasattr(uow, "ledgers")
+                and uow.ledgers is not None
+                and await uow.ledgers.exists_for_source("payment", payment.id)
+            ):
+                raise SalesPaymentValidationException(
+                    "Cannot delete payment with posted ledger entries",
+                    details={"payment_id": str(payment_id)},
+                )
             invoice = await self._get_payable_invoice(uow, payment.invoice_id)
             paid_before = await uow.payments.total_paid(invoice.id)
             remaining_paid = max(paid_before - payment.amount, ZERO_AMOUNT)
 
             await uow.payments.delete(payment)
             await self._sync_invoice_payment_status(uow, invoice, remaining_paid)
+            await uow.commit()
             await self._event_dispatcher.dispatch(
                 PaymentDeletedEvent(
                     payment_id=payment.id,
@@ -202,7 +236,6 @@ class PaymentService:
                     business_id=invoice.business_id,
                 )
             )
-            await uow.commit()
 
     async def _get_existing_payment(
         self,

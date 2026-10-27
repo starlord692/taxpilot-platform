@@ -50,9 +50,9 @@ def patch_tesseract_dependencies(
         if module_name == "pdf2image":
             if pdf_failure:
                 return SimpleNamespace(
-                    convert_from_bytes=lambda *args, **kwargs: (
-                        _ for _ in ()
-                    ).throw(RuntimeError("bad pdf"))
+                    convert_from_bytes=lambda *args, **kwargs: (_ for _ in ()).throw(
+                        RuntimeError("bad pdf")
+                    )
                 )
             return SimpleNamespace(
                 convert_from_bytes=lambda *args, **kwargs: [

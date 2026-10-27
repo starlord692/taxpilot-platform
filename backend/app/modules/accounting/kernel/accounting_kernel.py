@@ -4,11 +4,11 @@ import uuid
 from collections.abc import Callable, Iterable
 from datetime import UTC, date, datetime
 from decimal import Decimal
-from typing import Protocol
+from typing import Any, Protocol
 
 import app.modules.business.models  # noqa: F401
 import app.modules.identity.models  # noqa: F401
-from app.common.events import EventDispatcher
+from app.common.events import Event, EventDispatcher
 from app.modules.accounting.balances.events import AccountBalanceUpdatedEvent
 from app.modules.accounting.balances.models import AccountBalance
 from app.modules.accounting.chart_of_accounts.models import Account
@@ -230,261 +230,358 @@ class AccountingKernelService:
         self._unit_of_work_factory = unit_of_work_factory
         self._event_dispatcher = event_dispatcher
 
-    async def record_sales_invoice(self, invoice_id: uuid.UUID) -> JournalEntry:
+    async def _emit_event(self, uow: Any, event: Event) -> None:
+        """Defer event dispatch post-commit if uow supports on_commit, else dispatch."""
+        if hasattr(uow, "on_commit"):
+            uow.on_commit(lambda: self._event_dispatcher.dispatch(event))
+        else:
+            await self._event_dispatcher.dispatch(event)
+
+    async def record_sales_invoice(
+        self,
+        invoice_id: uuid.UUID,
+        uow: Any | None = None,
+    ) -> JournalEntry:
         """Post an issued sales invoice through journal, ledger, and balances."""
-        async with self._unit_of_work_factory() as uow:
-            invoice = await uow.sales_invoices.get_by_id(invoice_id)
-            if invoice is None:
-                raise SalesInvoiceNotFoundException(
-                    "Invoice not found",
-                    details={"invoice_id": str(invoice_id)},
-                )
-            if invoice.status != InvoiceStatus.ISSUED:
-                raise SalesInvalidInvoiceStatusException(
-                    "Only issued invoices can be posted to accounting",
-                    details={
-                        "invoice_id": str(invoice_id),
-                        "status": invoice.status.value,
-                    },
-                )
+        if uow is not None:
+            return await self._record_sales_invoice_on_uow(uow, invoice_id)
 
-            accounts = await self._load_invoice_accounts(uow, invoice.business_id)
-            journal = await self._create_invoice_journal(uow, invoice, accounts)
-            ledger_entries = await self._post_journal_to_ledger(
-                uow,
-                journal,
-                source_module="sales",
-                source_entity="sales_invoice",
-                source_entity_id=invoice.id,
-            )
-            await self._apply_balances(uow, ledger_entries)
-            await self._event_dispatcher.dispatch(
-                AccountingInvoicePostedEvent(
-                    invoice_id=invoice.id,
-                    journal_id=journal.id,
-                    business_id=invoice.business_id,
-                )
-            )
-            await uow.commit()
+        async with self._unit_of_work_factory() as local_uow:
+            journal = await self._record_sales_invoice_on_uow(local_uow, invoice_id)
+            await local_uow.commit()
             return journal
 
-    async def record_customer_payment(self, payment_id: uuid.UUID) -> JournalEntry:
+    async def _record_sales_invoice_on_uow(
+        self,
+        uow: Any,
+        invoice_id: uuid.UUID,
+    ) -> JournalEntry:
+        invoice = await uow.sales_invoices.get_by_id(invoice_id)
+        if invoice is None:
+            raise SalesInvoiceNotFoundException(
+                "Invoice not found",
+                details={"invoice_id": str(invoice_id)},
+            )
+        if invoice.status != InvoiceStatus.ISSUED:
+            raise SalesInvalidInvoiceStatusException(
+                "Only issued invoices can be posted to accounting",
+                details={
+                    "invoice_id": str(invoice_id),
+                    "status": invoice.status.value,
+                },
+            )
+
+        accounts = await self._load_invoice_accounts(uow, invoice.business_id)
+        journal = await self._create_invoice_journal(uow, invoice, accounts)
+        ledger_entries = await self._post_journal_to_ledger(
+            uow,
+            journal,
+            source_module="sales",
+            source_entity="sales_invoice",
+            source_entity_id=invoice.id,
+        )
+        await self._apply_balances(uow, ledger_entries)
+        await self._emit_event(
+            uow,
+            AccountingInvoicePostedEvent(
+                invoice_id=invoice.id,
+                journal_id=journal.id,
+                business_id=invoice.business_id,
+            ),
+        )
+        return journal
+
+    async def record_customer_payment(
+        self,
+        payment_id: uuid.UUID,
+        uow: Any | None = None,
+    ) -> JournalEntry:
         """Post a customer payment through journal, ledger, and balances."""
-        async with self._unit_of_work_factory() as uow:
-            payment = await uow.payments.get_by_id(payment_id)
-            if payment is None:
-                raise SalesPaymentNotFoundException(
-                    "Payment not found",
-                    details={"payment_id": str(payment_id)},
-                )
-            invoice = await uow.sales_invoices.get_by_id(payment.invoice_id)
-            if invoice is None:
-                raise SalesInvoiceNotFoundException(
-                    "Invoice not found",
-                    details={"invoice_id": str(payment.invoice_id)},
-                )
+        if uow is not None:
+            return await self._record_customer_payment_on_uow(uow, payment_id)
 
-            accounts = await self._load_payment_accounts(
-                uow,
-                invoice.business_id,
-                payment.payment_method,
-            )
-            journal = await self._create_payment_journal(
-                uow,
-                invoice,
-                payment,
-                accounts,
-            )
-            ledger_entries = await self._post_journal_to_ledger(
-                uow,
-                journal,
-                source_module="sales",
-                source_entity="payment",
-                source_entity_id=payment.id,
-            )
-            await self._apply_balances(uow, ledger_entries)
-            await self._event_dispatcher.dispatch(
-                AccountingPaymentPostedEvent(
-                    payment_id=payment.id,
-                    invoice_id=invoice.id,
-                    journal_id=journal.id,
-                    business_id=invoice.business_id,
-                )
-            )
-            await uow.commit()
+        async with self._unit_of_work_factory() as local_uow:
+            journal = await self._record_customer_payment_on_uow(local_uow, payment_id)
+            await local_uow.commit()
             return journal
 
-    async def record_expense(self, expense_id: uuid.UUID) -> JournalEntry:
+    async def _record_customer_payment_on_uow(
+        self,
+        uow: Any,
+        payment_id: uuid.UUID,
+    ) -> JournalEntry:
+        payment = await uow.payments.get_by_id(payment_id)
+        if payment is None:
+            raise SalesPaymentNotFoundException(
+                "Payment not found",
+                details={"payment_id": str(payment_id)},
+            )
+        invoice = await uow.sales_invoices.get_by_id(payment.invoice_id)
+        if invoice is None:
+            raise SalesInvoiceNotFoundException(
+                "Invoice not found",
+                details={"invoice_id": str(payment.invoice_id)},
+            )
+
+        accounts = await self._load_payment_accounts(
+            uow,
+            invoice.business_id,
+            payment.payment_method,
+        )
+        journal = await self._create_payment_journal(
+            uow,
+            invoice,
+            payment,
+            accounts,
+        )
+        ledger_entries = await self._post_journal_to_ledger(
+            uow,
+            journal,
+            source_module="sales",
+            source_entity="payment",
+            source_entity_id=payment.id,
+        )
+        await self._apply_balances(uow, ledger_entries)
+        await self._emit_event(
+            uow,
+            AccountingPaymentPostedEvent(
+                payment_id=payment.id,
+                invoice_id=invoice.id,
+                journal_id=journal.id,
+                business_id=invoice.business_id,
+            ),
+        )
+        return journal
+
+    async def record_expense(
+        self,
+        expense_id: uuid.UUID,
+        uow: Any | None = None,
+    ) -> JournalEntry:
         """Post an approved expense through journal, ledger, and balances."""
-        async with self._unit_of_work_factory() as uow:
-            expense = await uow.expenses.get_by_id(expense_id)
-            if expense is None:
-                raise ExpenseNotFoundException(
-                    "Expense not found",
-                    details={"expense_id": str(expense_id)},
-                )
-            if expense.status != ExpenseStatus.APPROVED:
-                raise InvalidExpenseStatusException(
-                    "Only approved expenses can be posted to accounting",
-                    details={
-                        "expense_id": str(expense_id),
-                        "status": expense.status.value,
-                    },
-                )
+        if uow is not None:
+            return await self._record_expense_on_uow(uow, expense_id)
 
-            accounts = await self._load_expense_accounts(uow, expense)
-            journal = await self._create_expense_journal(uow, expense, accounts)
-            ledger_entries = await self._post_journal_to_ledger(
-                uow,
-                journal,
-                source_module="expenses",
-                source_entity="expense",
-                source_entity_id=expense.id,
-            )
-            await self._apply_balances(uow, ledger_entries)
-            await self._event_dispatcher.dispatch(
-                AccountingExpensePostedEvent(
-                    expense_id=expense.id,
-                    journal_id=journal.id,
-                    business_id=expense.business_id,
-                )
-            )
-            await uow.commit()
+        async with self._unit_of_work_factory() as local_uow:
+            journal = await self._record_expense_on_uow(local_uow, expense_id)
+            await local_uow.commit()
             return journal
 
-    async def record_expense_payment(self, expense_id: uuid.UUID) -> JournalEntry:
+    async def _record_expense_on_uow(
+        self,
+        uow: Any,
+        expense_id: uuid.UUID,
+    ) -> JournalEntry:
+        expense = await uow.expenses.get_by_id(expense_id)
+        if expense is None:
+            raise ExpenseNotFoundException(
+                "Expense not found",
+                details={"expense_id": str(expense_id)},
+            )
+        if expense.status != ExpenseStatus.APPROVED:
+            raise InvalidExpenseStatusException(
+                "Only approved expenses can be posted to accounting",
+                details={
+                    "expense_id": str(expense_id),
+                    "status": expense.status.value,
+                },
+            )
+
+        accounts = await self._load_expense_accounts(uow, expense)
+        journal = await self._create_expense_journal(uow, expense, accounts)
+        ledger_entries = await self._post_journal_to_ledger(
+            uow,
+            journal,
+            source_module="expenses",
+            source_entity="expense",
+            source_entity_id=expense.id,
+        )
+        await self._apply_balances(uow, ledger_entries)
+        await self._emit_event(
+            uow,
+            AccountingExpensePostedEvent(
+                expense_id=expense.id,
+                journal_id=journal.id,
+                business_id=expense.business_id,
+            ),
+        )
+        return journal
+
+    async def record_expense_payment(
+        self,
+        expense_id: uuid.UUID,
+        uow: Any | None = None,
+    ) -> JournalEntry:
         """Post a paid expense payment through journal, ledger, and balances."""
-        async with self._unit_of_work_factory() as uow:
-            expense = await uow.expenses.get_by_id(expense_id)
-            if expense is None:
-                raise ExpenseNotFoundException(
-                    "Expense not found",
-                    details={"expense_id": str(expense_id)},
-                )
-            if expense.status != ExpenseStatus.PAID:
-                raise InvalidExpenseStatusException(
-                    "Only paid expenses can have payment accounting posted",
-                    details={
-                        "expense_id": str(expense_id),
-                        "status": expense.status.value,
-                    },
-                )
+        if uow is not None:
+            return await self._record_expense_payment_on_uow(uow, expense_id)
 
-            accounts = await self._load_expense_payment_accounts(
-                uow,
-                expense.business_id,
-            )
-            journal = await self._create_expense_payment_journal(
-                uow,
-                expense,
-                accounts,
-            )
-            ledger_entries = await self._post_journal_to_ledger(
-                uow,
-                journal,
-                source_module="expenses",
-                source_entity="expense_payment",
-                source_entity_id=expense.id,
-            )
-            await self._apply_balances(uow, ledger_entries)
-            await self._event_dispatcher.dispatch(
-                AccountingExpensePaymentPostedEvent(
-                    expense_id=expense.id,
-                    journal_id=journal.id,
-                    business_id=expense.business_id,
-                )
-            )
-            await uow.commit()
+        async with self._unit_of_work_factory() as local_uow:
+            journal = await self._record_expense_payment_on_uow(local_uow, expense_id)
+            await local_uow.commit()
             return journal
+
+    async def _record_expense_payment_on_uow(
+        self,
+        uow: Any,
+        expense_id: uuid.UUID,
+    ) -> JournalEntry:
+        expense = await uow.expenses.get_by_id(expense_id)
+        if expense is None:
+            raise ExpenseNotFoundException(
+                "Expense not found",
+                details={"expense_id": str(expense_id)},
+            )
+        if expense.status != ExpenseStatus.PAID:
+            raise InvalidExpenseStatusException(
+                "Only paid expenses can have payment accounting posted",
+                details={
+                    "expense_id": str(expense_id),
+                    "status": expense.status.value,
+                },
+            )
+
+        accounts = await self._load_expense_payment_accounts(
+            uow,
+            expense.business_id,
+        )
+        journal = await self._create_expense_payment_journal(
+            uow,
+            expense,
+            accounts,
+        )
+        ledger_entries = await self._post_journal_to_ledger(
+            uow,
+            journal,
+            source_module="expenses",
+            source_entity="expense_payment",
+            source_entity_id=expense.id,
+        )
+        await self._apply_balances(uow, ledger_entries)
+        await self._emit_event(
+            uow,
+            AccountingExpensePaymentPostedEvent(
+                expense_id=expense.id,
+                journal_id=journal.id,
+                business_id=expense.business_id,
+            ),
+        )
+        return journal
 
     async def record_purchase_invoice(
         self,
         purchase_id: uuid.UUID,
+        uow: Any | None = None,
     ) -> JournalEntry:
         """Post an approved purchase through journal, ledger, and balances."""
-        async with self._unit_of_work_factory() as uow:
-            purchase = await uow.purchase_invoices.get_by_id(purchase_id)
-            if purchase is None:
-                raise PurchaseNotFoundException(
-                    "Purchase invoice not found",
-                    details={"purchase_id": str(purchase_id)},
-                )
-            if purchase.status != PurchaseStatus.APPROVED:
-                raise InvalidPurchaseStatusException(
-                    "Only approved purchases can be posted to accounting",
-                    details={
-                        "purchase_id": str(purchase_id),
-                        "status": purchase.status.value,
-                    },
-                )
+        if uow is not None:
+            return await self._record_purchase_invoice_on_uow(uow, purchase_id)
 
-            accounts = await self._load_purchase_accounts(uow, purchase)
-            journal = await self._create_purchase_journal(uow, purchase, accounts)
-            ledger_entries = await self._post_journal_to_ledger(
-                uow,
-                journal,
-                source_module="purchases",
-                source_entity="purchase_invoice",
-                source_entity_id=purchase.id,
-            )
-            await self._apply_balances(uow, ledger_entries)
-            await self._event_dispatcher.dispatch(
-                AccountingPurchasePostedEvent(
-                    purchase_id=purchase.id,
-                    journal_id=journal.id,
-                    business_id=purchase.business_id,
-                )
-            )
-            await uow.commit()
+        async with self._unit_of_work_factory() as local_uow:
+            journal = await self._record_purchase_invoice_on_uow(local_uow, purchase_id)
+            await local_uow.commit()
             return journal
+
+    async def _record_purchase_invoice_on_uow(
+        self,
+        uow: Any,
+        purchase_id: uuid.UUID,
+    ) -> JournalEntry:
+        purchase = await uow.purchase_invoices.get_by_id(purchase_id)
+        if purchase is None:
+            raise PurchaseNotFoundException(
+                "Purchase invoice not found",
+                details={"purchase_id": str(purchase_id)},
+            )
+        if purchase.status != PurchaseStatus.APPROVED:
+            raise InvalidPurchaseStatusException(
+                "Only approved purchases can be posted to accounting",
+                details={
+                    "purchase_id": str(purchase_id),
+                    "status": purchase.status.value,
+                },
+            )
+
+        accounts = await self._load_purchase_accounts(uow, purchase)
+        journal = await self._create_purchase_journal(uow, purchase, accounts)
+        ledger_entries = await self._post_journal_to_ledger(
+            uow,
+            journal,
+            source_module="purchases",
+            source_entity="purchase_invoice",
+            source_entity_id=purchase.id,
+        )
+        await self._apply_balances(uow, ledger_entries)
+        await self._emit_event(
+            uow,
+            AccountingPurchasePostedEvent(
+                purchase_id=purchase.id,
+                journal_id=journal.id,
+                business_id=purchase.business_id,
+            ),
+        )
+        return journal
 
     async def record_supplier_payment(
         self,
         purchase_id: uuid.UUID,
+        uow: Any | None = None,
     ) -> JournalEntry:
         """Post a paid purchase payment through journal, ledger, and balances."""
-        async with self._unit_of_work_factory() as uow:
-            purchase = await uow.purchase_invoices.get_by_id(purchase_id)
-            if purchase is None:
-                raise PurchaseNotFoundException(
-                    "Purchase invoice not found",
-                    details={"purchase_id": str(purchase_id)},
-                )
-            if purchase.status != PurchaseStatus.PAID:
-                raise InvalidPurchaseStatusException(
-                    "Only paid purchases can have supplier payment accounting posted",
-                    details={
-                        "purchase_id": str(purchase_id),
-                        "status": purchase.status.value,
-                    },
-                )
+        if uow is not None:
+            return await self._record_supplier_payment_on_uow(uow, purchase_id)
 
-            accounts = await self._load_supplier_payment_accounts(
-                uow,
-                purchase.business_id,
-            )
-            journal = await self._create_supplier_payment_journal(
-                uow,
-                purchase,
-                accounts,
-            )
-            ledger_entries = await self._post_journal_to_ledger(
-                uow,
-                journal,
-                source_module="purchases",
-                source_entity="supplier_payment",
-                source_entity_id=purchase.id,
-            )
-            await self._apply_balances(uow, ledger_entries)
-            await self._event_dispatcher.dispatch(
-                AccountingPurchasePaymentPostedEvent(
-                    purchase_id=purchase.id,
-                    journal_id=journal.id,
-                    business_id=purchase.business_id,
-                )
-            )
-            await uow.commit()
+        async with self._unit_of_work_factory() as local_uow:
+            journal = await self._record_supplier_payment_on_uow(local_uow, purchase_id)
+            await local_uow.commit()
             return journal
+
+    async def _record_supplier_payment_on_uow(
+        self,
+        uow: Any,
+        purchase_id: uuid.UUID,
+    ) -> JournalEntry:
+        purchase = await uow.purchase_invoices.get_by_id(purchase_id)
+        if purchase is None:
+            raise PurchaseNotFoundException(
+                "Purchase invoice not found",
+                details={"purchase_id": str(purchase_id)},
+            )
+        if purchase.status != PurchaseStatus.PAID:
+            raise InvalidPurchaseStatusException(
+                "Only paid purchases can have supplier payment accounting posted",
+                details={
+                    "purchase_id": str(purchase_id),
+                    "status": purchase.status.value,
+                },
+            )
+
+        accounts = await self._load_supplier_payment_accounts(
+            uow,
+            purchase.business_id,
+        )
+        journal = await self._create_supplier_payment_journal(
+            uow,
+            purchase,
+            accounts,
+        )
+        ledger_entries = await self._post_journal_to_ledger(
+            uow,
+            journal,
+            source_module="purchases",
+            source_entity="supplier_payment",
+            source_entity_id=purchase.id,
+        )
+        await self._apply_balances(uow, ledger_entries)
+        await self._emit_event(
+            uow,
+            AccountingPurchasePaymentPostedEvent(
+                purchase_id=purchase.id,
+                journal_id=journal.id,
+                business_id=purchase.business_id,
+            ),
+        )
+        return journal
 
     async def _load_invoice_accounts(
         self,
@@ -928,7 +1025,7 @@ class AccountingKernelService:
             journal,
             posting_date=datetime.now(tz=UTC).date(),
         )
-        await self._event_dispatcher.dispatch(JournalPostedEvent(journal_id=journal.id))
+        await self._emit_event(uow, JournalPostedEvent(journal_id=journal.id))
         return journal
 
     async def _post_journal_to_ledger(
@@ -975,11 +1072,12 @@ class AccountingKernelService:
                 "Ledger posting failed",
                 details={"journal_id": str(journal.id)},
             ) from exc
-        await self._event_dispatcher.dispatch(
+        await self._emit_event(
+            uow,
             LedgerPostedEvent(
                 journal_id=journal.id,
                 ledger_entry_count=len(entries),
-            )
+            ),
         )
         return entries
 
@@ -1011,12 +1109,13 @@ class AccountingKernelService:
             )
 
         if ledger_entries:
-            await self._event_dispatcher.dispatch(
+            await self._emit_event(
+                uow,
                 AccountBalanceUpdatedEvent(
                     journal_id=ledger_entries[0].journal_entry_id,
                     business_id=ledger_entries[0].business_id,
                     account_ids=list(grouped.keys()),
-                )
+                ),
             )
         return balances
 
@@ -1070,12 +1169,14 @@ class AccountingKernelService:
             "CGST": ZERO_AMOUNT,
             "SGST": ZERO_AMOUNT,
             "IGST": ZERO_AMOUNT,
+            "UTGST": ZERO_AMOUNT,
             "CESS": ZERO_AMOUNT,
         }
         for line in lines:
             components["CGST"] += getattr(line, "cgst_amount", ZERO_AMOUNT)
             components["SGST"] += getattr(line, "sgst_amount", ZERO_AMOUNT)
             components["IGST"] += getattr(line, "igst_amount", ZERO_AMOUNT)
+            components["UTGST"] += getattr(line, "utgst_amount", ZERO_AMOUNT)
             components["CESS"] += getattr(line, "cess_amount", ZERO_AMOUNT)
         if sum(components.values(), ZERO_AMOUNT) == ZERO_AMOUNT:
             components["GST"] = fallback_tax_amount

@@ -40,3 +40,17 @@ class PaginatedApiResponse[DataT](ApiResponse[list[DataT]]):
     """Standard API response envelope for paginated lists."""
 
     meta: PaginationMeta
+
+
+class ValidationErrorItem(BaseModel):
+    """Structured field validation error detail."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    loc: list[str | int]
+    msg: str
+    type: str
+
+
+class ValidationErrorResponse(ApiResponse[list[ValidationErrorItem]]):
+    """Standard API validation error response envelope."""

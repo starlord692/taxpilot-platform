@@ -7,6 +7,14 @@ from typing import Self
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from app.modules.gst.services.pos_resolution_service import (
+    ConsigneeRequiredException,
+    DirectingPartyIndeterminateException,
+    DirectionEvidenceType,
+    DirectionTiming,
+    DirectionTimingUnestablishedException,
+    ShippingStateRequiredException,
+)
 from app.modules.sales.models import InvoiceStatus, PaymentMethod
 from app.modules.sales.validators import (
     validate_customer_name,
@@ -189,6 +197,16 @@ class InvoiceLineRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
+    catalog_item_id: uuid.UUID | None = Field(
+        default=None,
+        description="Optional catalog item UUID.",
+        examples=[str(uuid.uuid4())],
+    )
+    warehouse_id: uuid.UUID | None = Field(
+        default=None,
+        description="Optional warehouse UUID for stock-tracked items.",
+        examples=[str(uuid.uuid4())],
+    )
     description: str = Field(
         description="Line item description.",
         examples=["Monthly bookkeeping"],
@@ -210,6 +228,7 @@ class InvoiceLineRequest(BaseModel):
     cgst_amount: Decimal = Field(default=Decimal("0.00"), examples=["85.50"])
     sgst_amount: Decimal = Field(default=Decimal("0.00"), examples=["85.50"])
     igst_amount: Decimal = Field(default=Decimal("0.00"), examples=["0.00"])
+    utgst_amount: Decimal = Field(default=Decimal("0.00"), examples=["0.00"])
     cess_amount: Decimal = Field(default=Decimal("0.00"), examples=["0.00"])
     line_total: Decimal = Field(description="Line total amount.", examples=["1121.00"])
 
@@ -231,6 +250,7 @@ class InvoiceLineRequest(BaseModel):
         "cgst_amount",
         "sgst_amount",
         "igst_amount",
+        "utgst_amount",
         "cess_amount",
         "line_total",
     )
@@ -292,6 +312,48 @@ class InvoiceCreateRequest(BaseModel):
         description="Invoice total amount.",
         examples=["1121.00"],
     )
+    place_of_supply: str | None = Field(
+        default=None,
+        description="2-digit GST state code of Place of Supply.",
+        examples=["29"],
+        max_length=2,
+    )
+    shipping_address: str | None = Field(
+        default=None,
+        description="Customer delivery/shipping address.",
+    )
+    shipping_state_code: str | None = Field(
+        default=None,
+        description="2-digit GST state code of delivery destination.",
+        examples=["27"],
+        max_length=2,
+    )
+    shipping_consignee_name: str | None = Field(
+        default=None,
+        description="Consignee or recipient name for delivery.",
+    )
+    is_bill_to_ship_to: bool = Field(
+        default=False,
+        description=(
+            "Whether this invoice represents a tripartite bill-to/ship-to supply "
+            "under Section 10(1)(b)."
+        ),
+    )
+    is_directing_party_billed_buyer: bool | None = Field(
+        default=None,
+        description=(
+            "Whether the billed buyer in their own right directs delivery "
+            "(agency direction or indeterminate fact fails closed)."
+        ),
+    )
+    direction_timing: DirectionTiming | None = Field(
+        default=None,
+        description="Timing of direction for Section 10(1)(b) supply.",
+    )
+    direction_evidence_type: DirectionEvidenceType | None = Field(
+        default=None,
+        description="Evidence category for Section 10(1)(b) buyer instruction.",
+    )
     notes: str | None = Field(default=None, description="Optional invoice notes.")
     lines: list[InvoiceLineRequest] = Field(
         description="Invoice line items.",
@@ -319,6 +381,63 @@ class InvoiceCreateRequest(BaseModel):
         )
         return self
 
+    @model_validator(mode="after")
+    def validate_bill_to_ship_to(self) -> Self:
+        """Validate Section 10(1)(b) factual requirements."""
+        if self.is_bill_to_ship_to:
+            if self.is_directing_party_billed_buyer is None:
+                raise DirectingPartyIndeterminateException(
+                    "Directing party is unestablished for Section 10(1)(b) "
+                    "bill-to/ship-to supply; must be confirmed as billed buyer",
+                    details={
+                        "is_bill_to_ship_to": True,
+                        "is_directing_party_billed_buyer": None,
+                    },
+                )
+            if not self.is_directing_party_billed_buyer:
+                raise DirectingPartyIndeterminateException(
+                    "Third-party agency direction is not supported under "
+                    "Section 10(1)(b) in Milestone 1; directing party must be "
+                    "the billed buyer",
+                    details={
+                        "is_bill_to_ship_to": True,
+                        "is_directing_party_billed_buyer": False,
+                    },
+                )
+            if not self.direction_timing:
+                raise DirectionTimingUnestablishedException(
+                    "Direction timing before or during movement is required for "
+                    "Section 10(1)(b) bill-to/ship-to supply",
+                    details={"is_bill_to_ship_to": True},
+                )
+            if not self.shipping_consignee_name:
+                raise ConsigneeRequiredException(
+                    "Shipping consignee name is required for bill-to/ship-to supply",
+                    details={"is_bill_to_ship_to": True},
+                )
+            if not self.shipping_state_code:
+                raise ShippingStateRequiredException(
+                    "Shipping destination state code is required for "
+                    "bill-to/ship-to supply",
+                    details={"is_bill_to_ship_to": True},
+                )
+        elif (
+            self.is_directing_party_billed_buyer is not None
+            or self.direction_timing is not None
+            or self.direction_evidence_type is not None
+        ):
+            raise DirectingPartyIndeterminateException(
+                "Section 10(1)(b) tripartite direction assertions cannot "
+                "be specified when is_bill_to_ship_to is False",
+                details={
+                    "is_bill_to_ship_to": False,
+                    "is_directing_party_billed_buyer": (
+                        self.is_directing_party_billed_buyer
+                    ),
+                },
+            )
+        return self
+
 
 class InvoiceUpdateRequest(BaseModel):
     """Request schema for updating a sales invoice."""
@@ -340,6 +459,42 @@ class InvoiceUpdateRequest(BaseModel):
         default=None,
         description="Updated due date.",
         examples=["2026-04-30"],
+    )
+    place_of_supply: str | None = Field(
+        default=None,
+        description="Updated 2-digit GST state code of Place of Supply.",
+        examples=["29"],
+        max_length=2,
+    )
+    shipping_address: str | None = Field(
+        default=None,
+        description="Updated shipping delivery address.",
+    )
+    shipping_state_code: str | None = Field(
+        default=None,
+        description="Updated 2-digit GST state code of delivery destination.",
+        examples=["27"],
+        max_length=2,
+    )
+    shipping_consignee_name: str | None = Field(
+        default=None,
+        description="Updated consignee or recipient name for delivery.",
+    )
+    is_bill_to_ship_to: bool | None = Field(
+        default=None,
+        description="Updated tripartite bill-to/ship-to flag.",
+    )
+    is_directing_party_billed_buyer: bool | None = Field(
+        default=None,
+        description="Updated directing party billed buyer flag.",
+    )
+    direction_timing: DirectionTiming | None = Field(
+        default=None,
+        description="Updated direction timing.",
+    )
+    direction_evidence_type: DirectionEvidenceType | None = Field(
+        default=None,
+        description="Updated direction evidence type.",
     )
     status: InvoiceStatus | None = Field(
         default=None,
@@ -387,6 +542,63 @@ class InvoiceUpdateRequest(BaseModel):
             invoice_date=self.invoice_date,
             due_date=self.due_date,
         )
+        return self
+
+    @model_validator(mode="after")
+    def validate_bill_to_ship_to(self) -> Self:
+        """Validate Section 10(1)(b) factual requirements on update."""
+        if self.is_bill_to_ship_to is True:
+            if self.is_directing_party_billed_buyer is None:
+                raise DirectingPartyIndeterminateException(
+                    "Directing party is unestablished for Section 10(1)(b) "
+                    "bill-to/ship-to supply; must be confirmed as billed buyer",
+                    details={
+                        "is_bill_to_ship_to": True,
+                        "is_directing_party_billed_buyer": None,
+                    },
+                )
+            if self.is_directing_party_billed_buyer is not True:
+                raise DirectingPartyIndeterminateException(
+                    "Third-party agency direction is not supported under "
+                    "Section 10(1)(b) in Milestone 1; directing party must be "
+                    "the billed buyer",
+                    details={
+                        "is_bill_to_ship_to": True,
+                        "is_directing_party_billed_buyer": False,
+                    },
+                )
+            if not self.direction_timing:
+                raise DirectionTimingUnestablishedException(
+                    "Direction timing before or during movement is required for "
+                    "Section 10(1)(b) bill-to/ship-to supply",
+                    details={"is_bill_to_ship_to": True},
+                )
+            if not self.shipping_consignee_name:
+                raise ConsigneeRequiredException(
+                    "Shipping consignee name is required for bill-to/ship-to supply",
+                    details={"is_bill_to_ship_to": True},
+                )
+            if not self.shipping_state_code:
+                raise ShippingStateRequiredException(
+                    "Shipping destination state code is required for "
+                    "bill-to/ship-to supply",
+                    details={"is_bill_to_ship_to": True},
+                )
+        elif self.is_bill_to_ship_to is False and (
+            self.is_directing_party_billed_buyer is not None
+            or self.direction_timing is not None
+            or self.direction_evidence_type is not None
+        ):
+            raise DirectingPartyIndeterminateException(
+                "Section 10(1)(b) tripartite direction assertions cannot "
+                "be specified when is_bill_to_ship_to is False",
+                details={
+                    "is_bill_to_ship_to": False,
+                    "is_directing_party_billed_buyer": (
+                        self.is_directing_party_billed_buyer
+                    ),
+                },
+            )
         return self
 
 

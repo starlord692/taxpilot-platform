@@ -95,11 +95,11 @@ def build_client(
 ) -> TestClient:
     """Build a test client with service overrides."""
     app = create_app(initialize_resources=False)
-    app.dependency_overrides[get_authentication_service] = (
-        lambda: authentication_service
+    app.dependency_overrides[get_authentication_service] = lambda: (
+        authentication_service
     )
-    app.dependency_overrides[get_token_service] = (
-        lambda: token_service or FakeTokenService()
+    app.dependency_overrides[get_token_service] = lambda: (
+        token_service or FakeTokenService()
     )
     return TestClient(app)
 

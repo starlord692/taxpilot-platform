@@ -10,6 +10,7 @@ from app.modules.gst.events.gst import (
     GSTAuditCompletedEvent,
     GSTCalculatedEvent,
     GSTRecalculatedEvent,
+    GSTReconciliationCompletedEvent,
     GSTRegistrationCreatedEvent,
     GSTRegistrationUpdatedEvent,
     GSTReturnGeneratedEvent,
@@ -24,6 +25,7 @@ __all__ = [
     "GSTAuditCompletedEvent",
     "GSTRecalculatedEvent",
     "GSTReturnGeneratedEvent",
+    "GSTReconciliationCompletedEvent",
     "GSTSettingsChangedEvent",
     "GSTTaxRateChangedEvent",
     "EWayBillCancelledEvent",
@@ -31,3 +33,4 @@ __all__ = [
     "IRNCancelledEvent",
     "IRNGeneratedEvent",
 ]
+

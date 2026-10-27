@@ -50,7 +50,10 @@ PurchaseUnitOfWorkDependency = Annotated[Any, Depends(get_purchase_unit_of_work)
         HTTPStatus.UNAUTHORIZED: {"model": ErrorResponse},
         HTTPStatus.FORBIDDEN: {"model": ErrorResponse},
         HTTPStatus.CONFLICT: {"model": ErrorResponse},
-        HTTPStatus.UNPROCESSABLE_ENTITY: {"model": ErrorResponse},
+        HTTPStatus.BAD_REQUEST: {
+            "model": ErrorResponse,
+            "description": "Request validation failed.",
+        },
     },
 )
 async def create_supplier(
@@ -165,7 +168,10 @@ async def get_supplier(
         HTTPStatus.FORBIDDEN: {"model": ErrorResponse},
         HTTPStatus.NOT_FOUND: {"model": ErrorResponse},
         HTTPStatus.CONFLICT: {"model": ErrorResponse},
-        HTTPStatus.UNPROCESSABLE_ENTITY: {"model": ErrorResponse},
+        HTTPStatus.BAD_REQUEST: {
+            "model": ErrorResponse,
+            "description": "Request validation failed.",
+        },
     },
 )
 async def update_supplier(
@@ -262,7 +268,10 @@ async def reactivate_supplier(
         HTTPStatus.FORBIDDEN: {"model": ErrorResponse},
         HTTPStatus.NOT_FOUND: {"model": ErrorResponse},
         HTTPStatus.CONFLICT: {"model": ErrorResponse},
-        HTTPStatus.UNPROCESSABLE_ENTITY: {"model": ErrorResponse},
+        HTTPStatus.BAD_REQUEST: {
+            "model": ErrorResponse,
+            "description": "Request validation failed.",
+        },
     },
 )
 async def create_purchase(
@@ -409,7 +418,10 @@ async def get_purchase(
         HTTPStatus.FORBIDDEN: {"model": ErrorResponse},
         HTTPStatus.NOT_FOUND: {"model": ErrorResponse},
         HTTPStatus.CONFLICT: {"model": ErrorResponse},
-        HTTPStatus.UNPROCESSABLE_ENTITY: {"model": ErrorResponse},
+        HTTPStatus.BAD_REQUEST: {
+            "model": ErrorResponse,
+            "description": "Request validation failed.",
+        },
     },
 )
 async def update_purchase(

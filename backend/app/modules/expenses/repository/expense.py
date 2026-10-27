@@ -14,7 +14,6 @@ from app.modules.expenses.models import (
     Expense,
     ExpenseLine,
     ExpenseStatus,
-    Vendor,
 )
 from app.modules.expenses.schemas import ExpenseCreate, ExpenseUpdate
 
@@ -47,8 +46,8 @@ class ExpenseRepository(BaseRepository[Expense]):
         return await self.add(expense)
 
     async def get_by_id(self, expense_id: uuid.UUID) -> Expense | None:
-        """Return a non-deleted expense by UUID."""
-        statement = self._base_statement().where(Expense.id == expense_id)
+        """Return a non-deleted expense by UUID with relationships loaded."""
+        statement = self._detail_statement().where(Expense.id == expense_id)
         result = await self.session.execute(statement)
         return result.scalar_one_or_none()
 
@@ -58,8 +57,11 @@ class ExpenseRepository(BaseRepository[Expense]):
         business_id: uuid.UUID,
         expense_number: str,
     ) -> Expense | None:
-        """Return an expense by business-scoped expense number."""
-        statement = self._base_statement().where(
+        """Return an expense by business-scoped expense number.
+
+        Detail relationships (lines and vendor) are loaded.
+        """
+        statement = self._detail_statement().where(
             Expense.business_id == business_id,
             Expense.expense_number == expense_number,
         )
@@ -79,7 +81,7 @@ class ExpenseRepository(BaseRepository[Expense]):
         expense_date_to: date | None = None,
     ) -> Page[Expense]:
         """Return paginated expenses for a business with optional filters."""
-        statement = self._base_statement().where(Expense.business_id == business_id)
+        statement = self._summary_statement().where(Expense.business_id == business_id)
         statement = self._apply_optional_filters(
             statement,
             vendor_id=vendor_id,
@@ -97,7 +99,7 @@ class ExpenseRepository(BaseRepository[Expense]):
         pagination: PaginationParams | None = None,
     ) -> Page[Expense]:
         """Return paginated expenses for a vendor."""
-        statement = self._base_statement().where(Expense.vendor_id == vendor_id)
+        statement = self._summary_statement().where(Expense.vendor_id == vendor_id)
         return await self._paginate(statement, pagination)
 
     async def list_by_status(
@@ -108,7 +110,7 @@ class ExpenseRepository(BaseRepository[Expense]):
         pagination: PaginationParams | None = None,
     ) -> Page[Expense]:
         """Return paginated expenses for a business and status."""
-        statement = self._base_statement().where(
+        statement = self._summary_statement().where(
             Expense.business_id == business_id,
             Expense.status == status,
         )
@@ -145,21 +147,33 @@ class ExpenseRepository(BaseRepository[Expense]):
         )
 
     async def _count_statement(self, statement: Select[tuple[Expense]]) -> int:
-        """Count rows from a selectable statement."""
-        count_statement = select(func.count()).select_from(statement.subquery())
+        """Count rows from a selectable statement using public SQLAlchemy API."""
+        clean_stmt = statement.order_by(None).offset(None).limit(None)
+        count_statement = select(func.count()).select_from(clean_stmt.subquery())
         result = await self.session.execute(count_statement)
         return int(result.scalar_one())
 
-    def _base_statement(self) -> Select[tuple[Expense]]:
-        """Return standard expense select with relationships loaded."""
+    def _summary_statement(self) -> Select[tuple[Expense]]:
+        """Return summary expense select without child collections."""
+        return (
+            select(Expense)
+            .where(Expense.is_deleted.is_(False))
+        )
+
+    def _detail_statement(self) -> Select[tuple[Expense]]:
+        """Return standard expense select with lines and vendor loaded."""
         return (
             select(Expense)
             .options(
                 selectinload(Expense.lines),
-                selectinload(Expense.vendor).selectinload(Vendor.expenses),
+                selectinload(Expense.vendor),
             )
             .where(Expense.is_deleted.is_(False))
         )
+
+    def _base_statement(self) -> Select[tuple[Expense]]:
+        """Backwards-compatibility alias returning detail statement."""
+        return self._detail_statement()
 
     def _apply_optional_filters(
         self,

@@ -8,6 +8,7 @@ from typing import cast
 import pytest
 
 from app.common.events import Event, EventDispatcher
+from app.core.model_registry import import_all_models
 from app.modules.inventory.events import (
     StockAdjustedEvent,
     StockIssuedEvent,
@@ -28,6 +29,8 @@ from app.modules.inventory.services.stock_engine import (
     StockEngine,
     StockEngineUnitOfWork,
 )
+
+import_all_models()
 
 TRANSFER_MOVEMENT_COUNT = 2
 
@@ -430,13 +433,10 @@ async def test_transfer_stock_updates_both_warehouses(
 
     assert len(movements) == TRANSFER_MOVEMENT_COUNT
     assert balance_for(stock_engine_fixture).quantity_on_hand == Decimal("6.0000")
-    assert (
-        balance_for(
-            stock_engine_fixture,
-            stock_engine_fixture.second_warehouse_id,
-        ).quantity_on_hand
-        == Decimal("4.0000")
-    )
+    assert balance_for(
+        stock_engine_fixture,
+        stock_engine_fixture.second_warehouse_id,
+    ).quantity_on_hand == Decimal("4.0000")
     assert any(
         isinstance(event, StockTransferredEvent)
         for event in stock_engine_fixture.dispatcher.events

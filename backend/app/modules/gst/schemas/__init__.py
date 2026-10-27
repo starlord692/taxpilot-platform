@@ -23,6 +23,12 @@ from app.modules.gst.schemas.tax_rate import (
     GSTTaxRateResponse,
     GSTTaxRateUpdate,
 )
+from app.modules.gst.schemas.verification import (
+    GSTINVerificationCreate,
+    GSTINVerificationResponse,
+    GSTINVerificationStatusUpdate,
+    GSTINVerificationUpdate,
+)
 
 __all__ = [
     "GSTRegistrationCreate",
@@ -34,6 +40,10 @@ __all__ = [
     "GSTTaxRateCreate",
     "GSTTaxRateResponse",
     "GSTTaxRateUpdate",
+    "GSTINVerificationCreate",
+    "GSTINVerificationResponse",
+    "GSTINVerificationStatusUpdate",
+    "GSTINVerificationUpdate",
     "HSNCodeCreate",
     "HSNCodeResponse",
     "HSNCodeUpdate",

@@ -45,6 +45,7 @@ class SalesInvoice(BaseEntity):
         Index("ix_sales_invoices_invoice_number", "invoice_number"),
         Index("ix_sales_invoices_invoice_date", "invoice_date"),
         Index("ix_sales_invoices_status", "status"),
+        Index("ix_sales_invoices_place_of_supply", "place_of_supply"),
     )
 
     business_id: Mapped[uuid.UUID] = mapped_column(
@@ -60,6 +61,7 @@ class SalesInvoice(BaseEntity):
     invoice_number: Mapped[str] = mapped_column(String(50), nullable=False)
     invoice_date: Mapped[date] = mapped_column(Date, nullable=False)
     due_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    place_of_supply: Mapped[str | None] = mapped_column(String(2), nullable=True)
     status: Mapped[InvoiceStatus] = mapped_column(
         Enum(InvoiceStatus, name="invoice_status"),
         default=InvoiceStatus.DRAFT,
@@ -86,6 +88,11 @@ class SalesInvoice(BaseEntity):
         nullable=False,
     )
     total_amount: Mapped[Decimal] = mapped_column(
+        Numeric(18, 2),
+        default=Decimal("0.00"),
+        nullable=False,
+    )
+    round_off: Mapped[Decimal] = mapped_column(
         Numeric(18, 2),
         default=Decimal("0.00"),
         nullable=False,

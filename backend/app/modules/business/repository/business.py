@@ -69,6 +69,14 @@ class BusinessRepository(BaseRepository[Business]):
         result = await self.session.execute(statement)
         return result.scalar_one_or_none()
 
+    async def get_by_legal_name(self, legal_name: str) -> Business | None:
+        """Return a non-deleted business by legal name."""
+        statement = self._base_business_statement().where(
+            Business.legal_name == legal_name,
+        )
+        result = await self.session.execute(statement)
+        return result.scalar_one_or_none()
+
     async def list_by_user(
         self,
         user_id: uuid.UUID,

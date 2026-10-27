@@ -40,7 +40,10 @@ ExpenseUnitOfWorkDependency = Annotated[Any, Depends(get_expense_unit_of_work)]
         HTTPStatus.UNAUTHORIZED: {"model": ErrorResponse},
         HTTPStatus.FORBIDDEN: {"model": ErrorResponse},
         HTTPStatus.CONFLICT: {"model": ErrorResponse},
-        HTTPStatus.UNPROCESSABLE_ENTITY: {"model": ErrorResponse},
+        HTTPStatus.BAD_REQUEST: {
+            "model": ErrorResponse,
+            "description": "Request validation failed.",
+        },
     },
 )
 async def create_vendor(
@@ -146,7 +149,10 @@ async def get_vendor(
         HTTPStatus.FORBIDDEN: {"model": ErrorResponse},
         HTTPStatus.NOT_FOUND: {"model": ErrorResponse},
         HTTPStatus.CONFLICT: {"model": ErrorResponse},
-        HTTPStatus.UNPROCESSABLE_ENTITY: {"model": ErrorResponse},
+        HTTPStatus.BAD_REQUEST: {
+            "model": ErrorResponse,
+            "description": "Request validation failed.",
+        },
     },
 )
 async def update_vendor(

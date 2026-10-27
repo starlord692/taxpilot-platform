@@ -12,6 +12,7 @@ from app.modules.gst.services.gst_calculation_service import (
 from app.modules.gst.services.registration_service import GSTRegistrationService
 from app.modules.gst.services.settings_service import GSTSettingsService
 from app.modules.gst.services.tax_rate_service import GSTTaxRateService
+from app.modules.gst.services.verification_service import GSTINVerificationService
 
 __all__ = [
     "GSTRegistrationService",
@@ -24,4 +25,5 @@ __all__ = [
     "GSTSupplyType",
     "GSTSettingsService",
     "GSTTaxRateService",
+    "GSTINVerificationService",
 ]

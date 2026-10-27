@@ -34,11 +34,7 @@ class FakeLedgerRepository:
         journal_id: uuid.UUID,
     ) -> list[GeneralLedgerEntry]:
         """Return entries for a journal."""
-        return [
-            entry
-            for entry in self.entries
-            if entry.journal_entry_id == journal_id
-        ]
+        return [entry for entry in self.entries if entry.journal_entry_id == journal_id]
 
 
 class FakeAccountBalanceRepository:
@@ -95,9 +91,7 @@ class FakeBalanceUnitOfWork:
     ) -> None:
         """Initialize fake repositories."""
         self.ledgers: AccountBalanceLedgerRepository = ledger_repository
-        self.account_balances: AccountBalancePersistenceRepository = (
-            balance_repository
-        )
+        self.account_balances: AccountBalancePersistenceRepository = balance_repository
         self.committed = False
         self.rolled_back = False
 

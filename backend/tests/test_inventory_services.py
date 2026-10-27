@@ -342,9 +342,7 @@ class FakeInventoryUnitOfWork:
         """Initialize fake repositories."""
         self.products = product_repository or FakeProductRepository()
         self.warehouses = warehouse_repository or FakeWarehouseRepository()
-        self.stock_balances = (
-            stock_balance_repository or FakeStockBalanceRepository()
-        )
+        self.stock_balances = stock_balance_repository or FakeStockBalanceRepository()
         self.committed = False
         self.rolled_back = False
 
@@ -469,9 +467,7 @@ def build_warehouse_service(
 
 def build_inventory_service(uow: FakeInventoryUnitOfWork) -> InventoryService:
     """Build inventory service with fake dependencies."""
-    return InventoryService(
-        unit_of_work_factory=lambda: cast(InventoryUnitOfWork, uow)
-    )
+    return InventoryService(unit_of_work_factory=lambda: cast(InventoryUnitOfWork, uow))
 
 
 async def test_product_lifecycle_and_events() -> None:
@@ -506,9 +502,7 @@ async def test_duplicate_sku_and_barcode_are_rejected() -> None:
     """Product service rejects duplicate SKU and barcode values."""
     existing = build_product()
     service = build_product_service(
-        FakeInventoryUnitOfWork(
-            product_repository=FakeProductRepository([existing])
-        ),
+        FakeInventoryUnitOfWork(product_repository=FakeProductRepository([existing])),
         CapturingEventDispatcher(),
     )
 
@@ -518,9 +512,7 @@ async def test_duplicate_sku_and_barcode_are_rejected() -> None:
             business_id=existing.business_id,
         )
 
-    request = build_product_request().model_copy(
-        update={"sku": "LAPTOP-002"}
-    )
+    request = build_product_request().model_copy(update={"sku": "LAPTOP-002"})
     with pytest.raises(DuplicateProductException):
         await service.create_product(request, business_id=existing.business_id)
 
@@ -549,9 +541,7 @@ async def test_product_business_isolation() -> None:
     """Product service rejects cross-business access."""
     product = build_product()
     service = build_product_service(
-        FakeInventoryUnitOfWork(
-            product_repository=FakeProductRepository([product])
-        ),
+        FakeInventoryUnitOfWork(product_repository=FakeProductRepository([product])),
         CapturingEventDispatcher(),
     )
 

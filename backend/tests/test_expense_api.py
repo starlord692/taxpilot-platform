@@ -486,6 +486,4 @@ def test_openapi_documents_expense_routes() -> None:
     assert schema["paths"]["/api/v1/expenses/vendors"]["post"]["summary"] == (
         "Create vendor"
     )
-    assert schema["paths"]["/api/v1/expenses"]["post"]["summary"] == (
-        "Create expense"
-    )
+    assert schema["paths"]["/api/v1/expenses"]["post"]["summary"] == ("Create expense")

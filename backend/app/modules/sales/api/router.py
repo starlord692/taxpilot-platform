@@ -62,7 +62,7 @@ SalesUnitOfWorkDependency = Annotated[
             "model": ErrorResponse,
             "description": "Customer code or email already exists.",
         },
-        HTTPStatus.UNPROCESSABLE_ENTITY: {
+        HTTPStatus.BAD_REQUEST: {
             "model": ErrorResponse,
             "description": "Request validation failed.",
         },
@@ -94,11 +94,12 @@ async def create_customer(
             )
         customer = await uow.customers.create(request)
         await uow.commit()
+        customer_response = CustomerResponse.model_validate(customer)
 
     return SuccessResponse(
         success=True,
         message="Customer created successfully",
-        data=CustomerResponse.model_validate(customer),
+        data=customer_response,
     )
 
 
@@ -134,14 +135,15 @@ async def list_customers(
             business_id,
             PaginationParams(page=page, size=page_size),
         )
+        data = [
+            CustomerResponse.model_validate(customer)
+            for customer in customer_page.items
+        ]
 
     return PaginatedApiResponse(
         success=True,
         message="Customers returned successfully",
-        data=[
-            CustomerResponse.model_validate(customer)
-            for customer in customer_page.items
-        ],
+        data=data,
         meta=customer_page.meta,
     )
 
@@ -169,11 +171,12 @@ async def get_customer(
     """Return a customer."""
     async with uow:
         customer = await _get_customer_for_user(uow, customer_id, current_user.id)
+        customer_response = CustomerResponse.model_validate(customer)
 
     return SuccessResponse(
         success=True,
         message="Customer returned successfully",
-        data=CustomerResponse.model_validate(customer),
+        data=customer_response,
     )
 
 
@@ -191,7 +194,10 @@ async def get_customer(
         HTTPStatus.FORBIDDEN: {"model": ErrorResponse},
         HTTPStatus.NOT_FOUND: {"model": ErrorResponse},
         HTTPStatus.CONFLICT: {"model": ErrorResponse},
-        HTTPStatus.UNPROCESSABLE_ENTITY: {"model": ErrorResponse},
+        HTTPStatus.BAD_REQUEST: {
+            "model": ErrorResponse,
+            "description": "Request validation failed.",
+        },
     },
 )
 async def update_customer(
@@ -229,11 +235,12 @@ async def update_customer(
             )
         customer = await uow.customers.update(customer, request)
         await uow.commit()
+        customer_response = CustomerResponse.model_validate(customer)
 
     return SuccessResponse(
         success=True,
         message="Customer updated successfully",
-        data=CustomerResponse.model_validate(customer),
+        data=customer_response,
     )
 
 
@@ -249,7 +256,10 @@ async def update_customer(
         HTTPStatus.FORBIDDEN: {"model": ErrorResponse},
         HTTPStatus.NOT_FOUND: {"model": ErrorResponse},
         HTTPStatus.CONFLICT: {"model": ErrorResponse},
-        HTTPStatus.UNPROCESSABLE_ENTITY: {"model": ErrorResponse},
+        HTTPStatus.BAD_REQUEST: {
+            "model": ErrorResponse,
+            "description": "Request validation failed.",
+        },
     },
 )
 async def create_invoice(
@@ -296,14 +306,15 @@ async def list_invoices(
             business_id,
             PaginationParams(page=page, size=page_size),
         )
+        data = [
+            InvoiceSummaryResponse.model_validate(invoice)
+            for invoice in invoice_page.items
+        ]
 
     return PaginatedApiResponse(
         success=True,
         message="Invoices returned successfully",
-        data=[
-            InvoiceSummaryResponse.model_validate(invoice)
-            for invoice in invoice_page.items
-        ],
+        data=data,
         meta=invoice_page.meta,
     )
 
@@ -331,11 +342,12 @@ async def get_invoice(
     """Return an invoice."""
     async with uow:
         invoice = await _get_invoice_for_user(uow, invoice_id, current_user.id)
+        invoice_response = InvoiceResponse.model_validate(invoice)
 
     return SuccessResponse(
         success=True,
         message="Invoice returned successfully",
-        data=InvoiceResponse.model_validate(invoice),
+        data=invoice_response,
     )
 
 
@@ -353,7 +365,10 @@ async def get_invoice(
         HTTPStatus.FORBIDDEN: {"model": ErrorResponse},
         HTTPStatus.NOT_FOUND: {"model": ErrorResponse},
         HTTPStatus.CONFLICT: {"model": ErrorResponse},
-        HTTPStatus.UNPROCESSABLE_ENTITY: {"model": ErrorResponse},
+        HTTPStatus.BAD_REQUEST: {
+            "model": ErrorResponse,
+            "description": "Request validation failed.",
+        },
     },
 )
 async def update_invoice(
@@ -478,10 +493,12 @@ async def _get_invoice_for_user(
 ) -> SalesInvoice:
     """Return an invoice after enforcing business membership."""
     invoice = await uow.sales_invoices.get_by_id(invoice_id)
-    if invoice is None:
+    if invoice is None or not await uow.business_memberships.is_member(
+        business_id=invoice.business_id,
+        user_id=user_id,
+    ):
         raise SalesInvoiceNotFoundException(
             "Invoice not found",
             details={"invoice_id": str(invoice_id)},
         )
-    await _ensure_business_member(uow, invoice.business_id, user_id)
     return cast(SalesInvoice, invoice)

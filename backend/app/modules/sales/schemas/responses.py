@@ -42,6 +42,18 @@ class InvoiceLineResponse(SalesResponseBase):
 
     id: uuid.UUID = Field(description="Invoice line UUID.")
     invoice_id: uuid.UUID = Field(description="Invoice UUID.")
+    catalog_item_id: uuid.UUID | None = Field(
+        default=None,
+        description="Catalog item UUID.",
+    )
+    warehouse_id: uuid.UUID | None = Field(
+        default=None,
+        description="Fulfillment warehouse UUID.",
+    )
+    item_type: str | None = Field(
+        default=None,
+        description="Catalog item type (PRODUCT or SERVICE).",
+    )
     description: str = Field(description="Line item description.")
     quantity: Decimal = Field(description="Line quantity.")
     unit_price: Decimal = Field(description="Unit price.")
@@ -50,6 +62,10 @@ class InvoiceLineResponse(SalesResponseBase):
     cgst_amount: Decimal = Field(description="Line CGST amount.")
     sgst_amount: Decimal = Field(description="Line SGST amount.")
     igst_amount: Decimal = Field(description="Line IGST amount.")
+    utgst_amount: Decimal = Field(
+        default=Decimal("0.00"),
+        description="Line UTGST amount.",
+    )
     cess_amount: Decimal = Field(description="Line cess amount.")
     line_total: Decimal = Field(description="Line total amount.")
 
@@ -57,6 +73,7 @@ class InvoiceLineResponse(SalesResponseBase):
         "cgst_amount",
         "sgst_amount",
         "igst_amount",
+        "utgst_amount",
         "cess_amount",
         mode="before",
     )
@@ -91,6 +108,10 @@ class InvoiceSummaryResponse(SalesResponseBase):
     invoice_date: date = Field(description="Invoice issue date.")
     due_date: date | None = Field(default=None, description="Invoice due date.")
     status: InvoiceStatus = Field(description="Invoice lifecycle status.")
+    place_of_supply: str | None = Field(
+        default=None,
+        description="2-digit Place of Supply code.",
+    )
     total_amount: Decimal = Field(description="Invoice total amount.")
 
 

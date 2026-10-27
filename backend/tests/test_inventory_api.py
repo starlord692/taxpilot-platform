@@ -468,8 +468,8 @@ def build_client(
     warehouse_service = FakeWarehouseService(warehouse_response)
     inventory_service = FakeInventoryService(product_response, balance)
     app = create_app(initialize_resources=False)
-    app.dependency_overrides[get_inventory_unit_of_work] = (
-        lambda: FakeInventoryUnitOfWork(
+    app.dependency_overrides[get_inventory_unit_of_work] = lambda: (
+        FakeInventoryUnitOfWork(
             product=product if product_exists else None,
             warehouse=warehouse if warehouse_exists else None,
             is_member=is_member,
@@ -526,9 +526,7 @@ def test_product_crud_endpoints() -> None:
         f"/api/v1/inventory/products/{product.id}",
         json={"name": "Updated Laptop"},
     )
-    activate_response = client.post(
-        f"/api/v1/inventory/products/{product.id}/activate"
-    )
+    activate_response = client.post(f"/api/v1/inventory/products/{product.id}/activate")
     deactivate_response = client.post(
         f"/api/v1/inventory/products/{product.id}/deactivate"
     )

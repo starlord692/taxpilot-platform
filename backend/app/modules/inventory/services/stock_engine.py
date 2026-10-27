@@ -157,12 +157,13 @@ class StockEngine:
         purchase_invoice: Any,
         *,
         warehouse_id: uuid.UUID | None = None,
+        uow: Any | None = None,
     ) -> list[StockMovement]:
         """Receive purchase invoice lines into stock."""
         business_id = self._source_business_id(purchase_invoice)
         source_id = self._source_id(purchase_invoice)
         lines = self._source_lines(purchase_invoice, warehouse_id)
-        async with self._unit_of_work_factory() as uow:
+        if uow is not None:
             movements = await self._apply_source_lines(
                 uow,
                 business_id=business_id,
@@ -172,6 +173,28 @@ class StockEngine:
                 movement_type=MovementType.PURCHASE,
                 on_hand_multiplier=Decimal("1"),
             )
+            event = StockReceivedEvent(
+                business_id=business_id,
+                source_id=source_id,
+                movement_ids=tuple(movement.id for movement in movements),
+            )
+            if hasattr(uow, "on_commit"):
+                uow.on_commit(lambda: self._event_dispatcher.dispatch(event))
+            else:
+                await self._event_dispatcher.dispatch(event)
+            return movements
+
+        async with self._unit_of_work_factory() as local_uow:
+            movements = await self._apply_source_lines(
+                local_uow,
+                business_id=business_id,
+                source_id=source_id,
+                source_type="purchase_invoice",
+                lines=lines,
+                movement_type=MovementType.PURCHASE,
+                on_hand_multiplier=Decimal("1"),
+            )
+            await local_uow.commit()
             await self._event_dispatcher.dispatch(
                 StockReceivedEvent(
                     business_id=business_id,
@@ -179,7 +202,6 @@ class StockEngine:
                     movement_ids=tuple(movement.id for movement in movements),
                 )
             )
-            await uow.commit()
         return movements
 
     async def issue_sale(
@@ -187,12 +209,13 @@ class StockEngine:
         sales_invoice: Any,
         *,
         warehouse_id: uuid.UUID | None = None,
+        uow: Any | None = None,
     ) -> list[StockMovement]:
         """Issue sales invoice lines from stock."""
         business_id = self._source_business_id(sales_invoice)
         source_id = self._source_id(sales_invoice)
         lines = self._source_lines(sales_invoice, warehouse_id)
-        async with self._unit_of_work_factory() as uow:
+        if uow is not None:
             movements = await self._apply_source_lines(
                 uow,
                 business_id=business_id,
@@ -202,6 +225,28 @@ class StockEngine:
                 movement_type=MovementType.SALE,
                 on_hand_multiplier=Decimal("-1"),
             )
+            event = StockIssuedEvent(
+                business_id=business_id,
+                source_id=source_id,
+                movement_ids=tuple(movement.id for movement in movements),
+            )
+            if hasattr(uow, "on_commit"):
+                uow.on_commit(lambda: self._event_dispatcher.dispatch(event))
+            else:
+                await self._event_dispatcher.dispatch(event)
+            return movements
+
+        async with self._unit_of_work_factory() as local_uow:
+            movements = await self._apply_source_lines(
+                local_uow,
+                business_id=business_id,
+                source_id=source_id,
+                source_type="sales_invoice",
+                lines=lines,
+                movement_type=MovementType.SALE,
+                on_hand_multiplier=Decimal("-1"),
+            )
+            await local_uow.commit()
             await self._event_dispatcher.dispatch(
                 StockIssuedEvent(
                     business_id=business_id,
@@ -209,7 +254,59 @@ class StockEngine:
                     movement_ids=tuple(movement.id for movement in movements),
                 )
             )
-            await uow.commit()
+        return movements
+
+    async def issue_sale_lines(
+        self,
+        sales_invoice: Any,
+        lines: list[StockLine],
+        *,
+        uow: Any | None = None,
+    ) -> list[StockMovement]:
+        """Issue specific pre-resolved stock lines for a sales invoice."""
+        if not lines:
+            return []
+        business_id = self._source_business_id(sales_invoice)
+        source_id = self._source_id(sales_invoice)
+        if uow is not None:
+            movements = await self._apply_source_lines(
+                uow,
+                business_id=business_id,
+                source_id=source_id,
+                source_type="sales_invoice",
+                lines=lines,
+                movement_type=MovementType.SALE,
+                on_hand_multiplier=Decimal("-1"),
+            )
+            event = StockIssuedEvent(
+                business_id=business_id,
+                source_id=source_id,
+                movement_ids=tuple(movement.id for movement in movements),
+            )
+            if hasattr(uow, "on_commit"):
+                uow.on_commit(lambda: self._event_dispatcher.dispatch(event))
+            else:
+                await self._event_dispatcher.dispatch(event)
+            return movements
+
+        async with self._unit_of_work_factory() as local_uow:
+            movements = await self._apply_source_lines(
+                local_uow,
+                business_id=business_id,
+                source_id=source_id,
+                source_type="sales_invoice",
+                lines=lines,
+                movement_type=MovementType.SALE,
+                on_hand_multiplier=Decimal("-1"),
+            )
+            await local_uow.commit()
+            await self._event_dispatcher.dispatch(
+                StockIssuedEvent(
+                    business_id=business_id,
+                    source_id=source_id,
+                    movement_ids=tuple(movement.id for movement in movements),
+                )
+            )
         return movements
 
     async def return_sale(
@@ -217,13 +314,14 @@ class StockEngine:
         sales_invoice: Any,
         *,
         warehouse_id: uuid.UUID | None = None,
+        uow: Any | None = None,
     ) -> list[StockMovement]:
         """Return previously sold stock to inventory."""
         business_id = self._source_business_id(sales_invoice)
         source_id = self._source_id(sales_invoice)
         lines = self._source_lines(sales_invoice, warehouse_id)
-        async with self._unit_of_work_factory() as uow:
-            movements = await self._apply_source_lines(
+        if uow is not None:
+            return await self._apply_source_lines(
                 uow,
                 business_id=business_id,
                 source_id=source_id,
@@ -232,7 +330,18 @@ class StockEngine:
                 movement_type=MovementType.RETURN,
                 on_hand_multiplier=Decimal("1"),
             )
-            await uow.commit()
+
+        async with self._unit_of_work_factory() as local_uow:
+            movements = await self._apply_source_lines(
+                local_uow,
+                business_id=business_id,
+                source_id=source_id,
+                source_type="sales_return",
+                lines=lines,
+                movement_type=MovementType.RETURN,
+                on_hand_multiplier=Decimal("1"),
+            )
+            await local_uow.commit()
         return movements
 
     async def return_purchase(
@@ -240,13 +349,14 @@ class StockEngine:
         purchase_invoice: Any,
         *,
         warehouse_id: uuid.UUID | None = None,
+        uow: Any | None = None,
     ) -> list[StockMovement]:
         """Return purchased stock to a supplier."""
         business_id = self._source_business_id(purchase_invoice)
         source_id = self._source_id(purchase_invoice)
         lines = self._source_lines(purchase_invoice, warehouse_id)
-        async with self._unit_of_work_factory() as uow:
-            movements = await self._apply_source_lines(
+        if uow is not None:
+            return await self._apply_source_lines(
                 uow,
                 business_id=business_id,
                 source_id=source_id,
@@ -255,7 +365,18 @@ class StockEngine:
                 movement_type=MovementType.RETURN,
                 on_hand_multiplier=Decimal("-1"),
             )
-            await uow.commit()
+
+        async with self._unit_of_work_factory() as local_uow:
+            movements = await self._apply_source_lines(
+                local_uow,
+                business_id=business_id,
+                source_id=source_id,
+                source_type="purchase_return",
+                lines=lines,
+                movement_type=MovementType.RETURN,
+                on_hand_multiplier=Decimal("-1"),
+            )
+            await local_uow.commit()
         return movements
 
     async def adjust_stock(
@@ -294,6 +415,7 @@ class StockEngine:
                 reference_id=uuid.uuid4(),
                 notes=reason,
             )
+            await uow.commit()
             await self._event_dispatcher.dispatch(
                 StockAdjustedEvent(
                     business_id=business_id,
@@ -302,7 +424,6 @@ class StockEngine:
                     movement_id=movement.id,
                 )
             )
-            await uow.commit()
         return movement
 
     async def transfer_stock(
@@ -362,6 +483,7 @@ class StockEngine:
                 notes=notes,
             )
             movements = [out_movement, in_movement]
+            await uow.commit()
             await self._event_dispatcher.dispatch(
                 StockTransferredEvent(
                     business_id=business_id,
@@ -371,7 +493,6 @@ class StockEngine:
                     movement_ids=tuple(movement.id for movement in movements),
                 )
             )
-            await uow.commit()
         return movements
 
     async def reserve_stock(
@@ -393,6 +514,7 @@ class StockEngine:
                 warehouse_id=warehouse_id,
                 reserved_delta=quantity,
             )
+            await uow.commit()
             await self._event_dispatcher.dispatch(
                 StockReservedEvent(
                     business_id=business_id,
@@ -402,7 +524,6 @@ class StockEngine:
                     reference_id=reference_id,
                 )
             )
-            await uow.commit()
         return balance
 
     async def release_reservation(
@@ -424,6 +545,7 @@ class StockEngine:
                 warehouse_id=warehouse_id,
                 reserved_delta=-quantity,
             )
+            await uow.commit()
             await self._event_dispatcher.dispatch(
                 StockReleasedEvent(
                     business_id=business_id,
@@ -433,7 +555,6 @@ class StockEngine:
                     reference_id=reference_id,
                 )
             )
-            await uow.commit()
         return balance
 
     async def _apply_source_lines(

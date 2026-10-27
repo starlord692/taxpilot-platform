@@ -7,9 +7,30 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.common.exceptions import TaxPilotException
 from app.core.logging import get_logger
-from app.core.responses import ApiResponse, ErrorDetail, ErrorResponse
+from app.core.responses import (
+    ErrorDetail,
+    ErrorResponse,
+    ValidationErrorItem,
+    ValidationErrorResponse,
+)
 
 logger = get_logger(__name__)
+
+HTTP_STATUS_ERROR_CODES: dict[int, str] = {
+    status.HTTP_400_BAD_REQUEST: "bad_request",
+    status.HTTP_401_UNAUTHORIZED: "unauthorized",
+    status.HTTP_403_FORBIDDEN: "forbidden",
+    status.HTTP_404_NOT_FOUND: "not_found",
+    status.HTTP_405_METHOD_NOT_ALLOWED: "method_not_allowed",
+    status.HTTP_408_REQUEST_TIMEOUT: "request_timeout",
+    status.HTTP_409_CONFLICT: "conflict",
+    422: "validation_error",
+    status.HTTP_429_TOO_MANY_REQUESTS: "too_many_requests",
+    status.HTTP_500_INTERNAL_SERVER_ERROR: "internal_error",
+    status.HTTP_502_BAD_GATEWAY: "bad_gateway",
+    status.HTTP_503_SERVICE_UNAVAILABLE: "service_unavailable",
+    status.HTTP_504_GATEWAY_TIMEOUT: "gateway_timeout",
+}
 
 
 def register_exception_handlers(app: FastAPI) -> None:
@@ -43,10 +64,14 @@ def register_exception_handlers(app: FastAPI) -> None:
             "http_exception",
             extra={"path": request.url.path, "status_code": exc.status_code},
         )
-        response = ApiResponse[dict[str, object] | None](
+        error_code = HTTP_STATUS_ERROR_CODES.get(
+            exc.status_code,
+            f"http_{exc.status_code}",
+        )
+        response = ErrorResponse(
             success=False,
             message=str(exc.detail),
-            data=None,
+            data=ErrorDetail(code=error_code, details={}),
         )
         return JSONResponse(
             status_code=exc.status_code,
@@ -59,15 +84,15 @@ def register_exception_handlers(app: FastAPI) -> None:
         exc: RequestValidationError,
     ) -> JSONResponse:
         logger.warning("validation_error", extra={"path": request.url.path})
-        response = ApiResponse[list[dict[str, object]]](
+        response = ValidationErrorResponse(
             success=False,
             message="Request validation failed",
             data=[
-                {
-                    "loc": error.get("loc", ()),
-                    "msg": error.get("msg", ""),
-                    "type": error.get("type", ""),
-                }
+                ValidationErrorItem(
+                    loc=list(error.get("loc", ())),
+                    msg=str(error.get("msg", "")),
+                    type=str(error.get("type", "")),
+                )
                 for error in exc.errors()
             ],
         )
@@ -82,10 +107,10 @@ def register_exception_handlers(app: FastAPI) -> None:
         exc: Exception,
     ) -> JSONResponse:
         logger.exception("unhandled_exception", extra={"path": request.url.path})
-        response = ApiResponse[None](
+        response = ErrorResponse(
             success=False,
             message="Internal server error",
-            data=None,
+            data=ErrorDetail(code="internal_error", details={}),
         )
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
