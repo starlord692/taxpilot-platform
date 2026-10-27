@@ -1,0 +1,1 @@
+import{WarehouseDetail}from"@/components/inventory/warehouse-pages";export default async function Page({params}:{params:Promise<{warehouseId:string}>}){return <WarehouseDetail id={(await params).warehouseId}/>}

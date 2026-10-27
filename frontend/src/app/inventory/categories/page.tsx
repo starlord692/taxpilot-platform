@@ -1,0 +1,1 @@
+import{Unavailable}from"@/components/inventory/inventory-states";export default function Page(){return <Unavailable title="Category management unavailable" description="Products may contain a backend-provided category value, but the backend exposes no category collection or management endpoint."/>}

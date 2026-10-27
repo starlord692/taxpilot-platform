@@ -1,0 +1,3 @@
+"use client";
+import { Button } from "@/components/ui/button";
+export default function GlobalError({ reset }: { error: Error & { digest?: string }; reset: () => void }) { return <html><body className="grid min-h-screen place-items-center bg-background p-6 text-foreground"><main className="max-w-md text-center"><p className="text-sm font-medium text-destructive">Application error</p><h1 className="mt-2 text-2xl font-semibold">TaxPilot needs a fresh start</h1><p className="mt-3 text-sm text-muted-foreground">An unexpected error interrupted the application.</p><Button className="mt-6" onClick={reset}>Try again</Button></main></body></html>; }

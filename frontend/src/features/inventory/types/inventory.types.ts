@@ -1,0 +1,8 @@
+export type Page<T>={success:boolean;message:string;data:T[];meta:{page:number;size:number;total:number;pages:number}};
+export type Success<T>={success:boolean;message:string;data:T};
+export type ProductList={id:string;business_id:string;sku:string;name:string;category:string|null;unit_of_measure:string;selling_price:string|number;reorder_level:string|number;is_active:boolean};
+export type Product=ProductList&{description:string|null;barcode:string|null;purchase_price:string|number};
+export type ProductInput={sku:string;name:string;description?:string|null;category?:string|null;unit_of_measure:string;barcode?:string|null;purchase_price:number;selling_price:number;reorder_level:number;is_active:boolean};
+export type ProductQuery={page:number;pageSize:number;sku?:string;name?:string;category?:string;active?:boolean;sort?:string};export type SearchQuery={page:number;pageSize:number;query:string};
+export type WarehouseList={id:string;business_id:string;code:string;name:string;is_default:boolean;is_active:boolean};export type Warehouse=WarehouseList&{address:string|null};export type WarehouseInput={code:string;name:string;address?:string|null;is_default:boolean;is_active:boolean};export type WarehouseQuery={page:number;pageSize:number;code?:string;name?:string;active?:boolean;sort?:string};
+export type StockBalance={id:string;business_id:string;product_id:string;warehouse_id:string;quantity_on_hand:string|number;quantity_reserved:string|number;quantity_available:string|number;last_updated:string};export type StockQuery={page:number;pageSize:number;productId?:string;warehouseId?:string};

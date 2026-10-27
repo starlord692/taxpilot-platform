@@ -1,0 +1,2 @@
+import type { BusinessSummary } from "../types/business.types";
+export function resolveBusinessSelection(businesses: BusinessSummary[], savedId: string | null) { if (!businesses.length) return { status: "no-business" as const, business: null }; if (businesses.length === 1) return { status: "ready" as const, business: businesses[0] }; const saved = savedId ? businesses.find((business) => business.id === savedId) : undefined; return saved ? { status: "ready" as const, business: saved } : { status: "selection-required" as const, business: null }; }

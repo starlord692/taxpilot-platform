@@ -1,0 +1,4 @@
+import { describe, expect, it } from "vitest";
+import { resolveBusinessSelection } from "./business-selection";
+const businesses = [{ id: "b1", legal_name: "One", trade_name: null, business_type: "company", status: "active" }, { id: "b2", legal_name: "Two", trade_name: null, business_type: "company", status: "active" }];
+describe("business selection", () => { it("reports no business honestly", () => expect(resolveBusinessSelection([], null).status).toBe("no-business")); it("auto-selects one accessible business", () => expect(resolveBusinessSelection(businesses.slice(0, 1), null).business?.id).toBe("b1")); it("restores a valid saved business", () => expect(resolveBusinessSelection(businesses, "b2").business?.id).toBe("b2")); it("rejects an inaccessible saved business", () => expect(resolveBusinessSelection(businesses, "invalid").status).toBe("selection-required")); });

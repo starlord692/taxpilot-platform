@@ -1,0 +1,2 @@
+import { LoaderCircle } from "lucide-react";
+export function AuthLoadingScreen() { return <div className="grid min-h-screen place-items-center bg-background" role="status"><div className="text-center"><span className="mx-auto grid size-10 place-items-center rounded-xl bg-primary text-sm font-bold text-primary-foreground">T</span><LoaderCircle className="mx-auto mt-5 size-5 animate-spin text-muted-foreground" /><p className="mt-3 text-sm text-muted-foreground">Verifying your session…</p></div></div>; }

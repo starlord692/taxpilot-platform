@@ -1,0 +1,3 @@
+import { BarChart3 } from "lucide-react";
+import { EmptyState } from "./empty-state";
+export function ChartCard({ title, description, className = "" }: { title: string; description: string; className?: string }) { return <section aria-labelledby={`chart-${title.replaceAll(" ", "-").toLowerCase()}`} className={`rounded-xl border bg-card ${className}`}><header className="flex items-center gap-2 border-b px-5 py-4"><BarChart3 className="size-4 text-muted-foreground" aria-hidden="true" /><h2 id={`chart-${title.replaceAll(" ", "-").toLowerCase()}`} className="text-sm font-semibold">{title}</h2></header><EmptyState title="Trend data unavailable" description={description} /></section>; }
