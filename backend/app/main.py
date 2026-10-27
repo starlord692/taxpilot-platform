@@ -4,6 +4,7 @@ from collections.abc import AsyncIterator, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import Settings, get_settings
 from app.core.database import dispose_database, initialize_database
@@ -25,6 +26,22 @@ from app.modules.sales.api import router as sales_router
 from app.modules.sales.api.payment_router import router as sales_payment_router
 
 logger = get_logger(__name__)
+
+CORS_ALLOW_METHODS: list[str] = [
+    "GET",
+    "POST",
+    "PUT",
+    "DELETE",
+    "PATCH",
+    "OPTIONS",
+]
+CORS_ALLOW_HEADERS: list[str] = [
+    "Authorization",
+    "Content-Type",
+    "Accept",
+    "Origin",
+    "X-Requested-With",
+]
 
 
 def build_lifespan(
@@ -72,6 +89,14 @@ def create_app(
     )
 
     register_exception_handlers(app)
+    if active_settings.cors_origins:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=active_settings.cors_origins,
+            allow_credentials=True,
+            allow_methods=CORS_ALLOW_METHODS,
+            allow_headers=CORS_ALLOW_HEADERS,
+        )
     app.add_middleware(AuthenticationMiddleware)
     app.include_router(identity_router, prefix=active_settings.api_v1_prefix)
     app.include_router(identity_login_router, prefix=active_settings.api_v1_prefix)
