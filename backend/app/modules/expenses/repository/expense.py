@@ -154,10 +154,11 @@ class ExpenseRepository(BaseRepository[Expense]):
         return int(result.scalar_one())
 
     def _summary_statement(self) -> Select[tuple[Expense]]:
-        """Return summary expense select without child collections."""
+        """Return summary expense select with lines and vendor loaded."""
         return (
             select(Expense)
             .options(
+                selectinload(Expense.lines),
                 selectinload(Expense.vendor),
             )
             .where(Expense.is_deleted.is_(False))
